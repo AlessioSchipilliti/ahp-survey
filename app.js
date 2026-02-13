@@ -498,13 +498,13 @@ function renderMatricesPage(st){
     <div style="height:10px"></div>
 
     <div class="matrixLayout">
-      <div class="stickyBox">
+      <div id="critPairs"></div>
+      <div>
         ${matrixHeatmap("hm_crit", "Criteria matrix")}
         <div style="display:flex; gap:10px; margin-top:10px;">
           <button type="button" class="btn inline" id="crit_reset">Reset criteria</button>
         </div>
       </div>
-      <div id="critPairs"></div>
     </div>
 
     <div class="divider"></div>
@@ -515,13 +515,13 @@ function renderMatricesPage(st){
     <div style="height:10px"></div>
 
     <div class="matrixLayout">
-      <div class="stickyBox">
+      <div id="altPairs"></div>
+      <div>
         ${matrixHeatmap("hm_alt", "Alternatives matrix")}
         <div style="display:flex; gap:10px; margin-top:10px;">
           <button type="button" class="btn inline" id="alt_reset">Reset this matrix</button>
         </div>
       </div>
-      <div id="altPairs"></div>
     </div>
   `;
 
@@ -578,6 +578,7 @@ function renderMatricesPage(st){
     drawMatrixHeatmap("hm_alt", st.alternatives, st.altMatrices[activeIdx]);
   }, 0);
 }
+
 
 function computeResults(st){
   const crit = ahpSolve(st.criteriaMatrix);
