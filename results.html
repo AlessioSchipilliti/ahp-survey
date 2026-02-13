@@ -1,0 +1,47 @@
+<!-- results.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AHP Tool, Results</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-page="results">
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <h1 class="h1">AHP Tool</h1>
+        <div class="muted">Results</div>
+      </div>
+      <div class="topActions">
+        <button class="btn" id="prevBtn">Previous</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <aside class="panel">
+        <div class="panelTitle">Pages</div>
+        <a class="navLink" href="setup.html">1. Problem setup</a>
+        <a class="navLink" href="matrices.html">2. Matrices setup</a>
+        <a class="navLink active" href="results.html">3. Results</a>
+
+        <div class="divider"></div>
+
+        <div class="panelTitle">Actions</div>
+        <button class="btn" id="btnExport">Export JSON</button>
+        <button class="btn" id="btnReset">Reset</button>
+
+        <div class="divider"></div>
+        <div class="small muted" id="status"></div>
+      </aside>
+
+      <section class="content">
+        <div class="card" id="view"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

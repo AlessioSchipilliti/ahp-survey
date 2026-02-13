@@ -1,18 +1,28 @@
-// ---------- State ----------
-const state = {
-  step: 1,
-  problem: { name: "Logistics", goal: "Select the best warehouse location" },
-  criteria: ["Transportation cost", "Delivery lead time", "Service reliability"],
-  alternatives: ["Location A", "Location B", "Location C"],
-
-  criteriaMatrix: [],
-  altMatrices: [], // one matrix per criterion
-};
+// app.js
+const STORAGE_KEY = "ahp_state_pages_v1";
 
 const RI = { 1:0, 2:0, 3:0.58, 4:0.90, 5:1.12, 6:1.24, 7:1.32, 8:1.41, 9:1.45, 10:1.49 };
 
+function defaultState(){
+  const st = {
+    problem: { name: "Logistics", goal: "Select the best warehouse location" },
+    criteria: ["Transportation cost", "Delivery lead time", "Service reliability"],
+    alternatives: ["Location A", "Location B", "Location C"],
+    criteriaMatrix: [],
+    altMatrices: [],
+    activeCritIdx: 0
+  };
+  initMatrices(st);
+  return st;
+}
+
 function identityMatrix(n){
   return Array.from({length:n}, (_,i)=>Array.from({length:n}, (_,j)=> i===j ? 1 : 1));
+}
+
+function initMatrices(st){
+  st.criteriaMatrix = identityMatrix(st.criteria.length);
+  st.altMatrices = st.criteria.map(()=> identityMatrix(st.alternatives.length));
 }
 
 function cloneMatrix(A){ return A.map(r=>r.slice()); }
@@ -25,16 +35,16 @@ function setPairwise(A, i, j, v){
   return B;
 }
 
-function powerIterationWeights(A, maxIter=1000, tol=1e-10){
+function powerIterationWeights(A, maxIter=1500, tol=1e-11){
   const n = A.length;
   let w = Array(n).fill(1/n);
 
   for(let it=0; it<maxIter; it++){
     const Aw = Array(n).fill(0);
     for(let i=0;i<n;i++){
-      let s=0;
-      for(let j=0;j<n;j++) s += A[i][j]*w[j];
-      Aw[i]=s;
+      let s = 0;
+      for(let j=0;j<n;j++) s += A[i][j] * w[j];
+      Aw[i] = s;
     }
     const sum = Aw.reduce((a,b)=>a+b,0);
     const wNew = Aw.map(x=>x/sum);
@@ -50,8 +60,7 @@ function powerIterationWeights(A, maxIter=1000, tol=1e-10){
     for(let j=0;j<n;j++) s += A[i][j]*w[j];
     Aw2[i]=s;
   }
-  const lambdaMax = Aw2.reduce((a,v,i)=>a + v / w[i], 0) / n;
-
+  const lambdaMax = Aw2.reduce((a,v,i)=> a + v / w[i], 0) / n;
   return { weights: w, lambdaMax };
 }
 
@@ -69,145 +78,296 @@ function ahpSolve(A){
   return { weights, lambdaMax, ci, cr };
 }
 
-function mmult(A, v){
-  const n = A.length;
-  const out = Array(n).fill(0);
+function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+function lerp(a, b, t){ return a + (b - a) * t; }
+
+function mixColor(c1, c2, t){
+  return [
+    Math.round(lerp(c1[0], c2[0], t)),
+    Math.round(lerp(c1[1], c2[1], t)),
+    Math.round(lerp(c1[2], c2[2], t)),
+  ];
+}
+
+function rgb(arr){ return `rgb(${arr[0]},${arr[1]},${arr[2]})`; }
+
+function drawMatrixHeatmap(canvasId, labels, A){
+  const c = document.getElementById(canvasId);
+  if(!c) return;
+  const ctx = c.getContext("2d");
+
+  const n = labels.length;
+  const W = c.width;
+  const H = c.height;
+  ctx.clearRect(0,0,W,H);
+
+  const pad = 16;
+  const top = 62;
+  const left = 170;
+
+  const sizeW = W - left - pad;
+  const sizeH = H - top - pad;
+  const cell = Math.floor(Math.min(sizeW, sizeH) / n);
+
+  let maxAbs = 0.0;
   for(let i=0;i<n;i++){
-    let s=0;
-    for(let j=0;j<n;j++) s += A[i][j]*v[j];
-    out[i]=s;
+    for(let j=0;j<n;j++){
+      const v = Number(A[i][j]);
+      if(!Number.isFinite(v) || v <= 0) continue;
+      const lv = Math.log(v);
+      maxAbs = Math.max(maxAbs, Math.abs(lv));
+    }
   }
-  return out;
+  if(maxAbs === 0) maxAbs = 1;
+
+  const blue = [29, 78, 216];
+  const white = [255, 255, 255];
+  const red = [220, 38, 38];
+
+  ctx.fillStyle = "rgba(15,23,42,0.88)";
+  ctx.font = "12px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for(let j=0;j<n;j++){
+    const x = left + j*cell + cell/2;
+    ctx.save();
+    ctx.translate(x, top - 18);
+    ctx.rotate(-0.35);
+    ctx.fillText(labels[j], 0, 0);
+    ctx.restore();
+  }
+
+  ctx.textAlign = "right";
+  for(let i=0;i<n;i++){
+    const y = top + i*cell + cell/2;
+    ctx.fillText(labels[i], left - 10, y);
+  }
+
+  ctx.textAlign = "center";
+  for(let i=0;i<n;i++){
+    for(let j=0;j<n;j++){
+      const v = Number(A[i][j]);
+      const x = left + j*cell;
+      const y = top + i*cell;
+
+      let col = white;
+      if(Number.isFinite(v) && v > 0){
+        const t = clamp(Math.log(v) / maxAbs, -1, 1);
+        if(t < 0) col = mixColor(white, blue, Math.abs(t));
+        if(t > 0) col = mixColor(white, red, Math.abs(t));
+      }
+
+      ctx.fillStyle = rgb(col);
+      ctx.fillRect(x, y, cell, cell);
+
+      ctx.strokeStyle = "rgba(15,23,42,0.10)";
+      ctx.strokeRect(x, y, cell, cell);
+
+      ctx.fillStyle = "rgba(15,23,42,0.86)";
+      ctx.font = "11px system-ui";
+      const txt = Number.isFinite(v) ? v.toFixed(2) : "";
+      ctx.fillText(txt, x + cell/2, y + cell/2);
+    }
+  }
 }
 
-function initMatrices(){
-  state.criteriaMatrix = identityMatrix(state.criteria.length);
-  state.altMatrices = state.criteria.map(()=> identityMatrix(state.alternatives.length));
-}
+function drawBarChart(canvasId, title, items){
+  const c = document.getElementById(canvasId);
+  if(!c) return;
+  const ctx = c.getContext("2d");
 
-initMatrices();
+  const W = c.width;
+  const H = c.height;
+  ctx.clearRect(0,0,W,H);
 
-// ---------- UI helpers ----------
-const elSteps = document.getElementById("steps");
-const elStatus = document.getElementById("status");
-const view1 = document.getElementById("view1");
-const view2 = document.getElementById("view2");
-const view3 = document.getElementById("view3");
+  ctx.fillStyle = "rgba(15,23,42,0.92)";
+  ctx.font = "18px system-ui";
+  ctx.fillText(title, 18, 28);
 
-function setStatus(msg){ elStatus.textContent = msg || ""; }
+  const maxV = Math.max(...items.map(x=>x.value), 0.00001);
+  const left = 18;
+  const right = 18;
+  const top = 44;
+  const bottom = 18;
 
-function renderSteps(){
-  elSteps.innerHTML = "";
-  const labels = ["Problem", "Matrices", "Results"];
-  labels.forEach((t, i)=>{
-    const d = document.createElement("div");
-    d.className = "stepPill" + (state.step === i+1 ? " active" : "");
-    d.textContent = `${i+1}. ${t}`;
-    elSteps.appendChild(d);
+  const chartW = W - left - right;
+  const chartH = H - top - bottom;
+
+  ctx.strokeStyle = "rgba(15,23,42,0.16)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(left, top + chartH);
+  ctx.lineTo(left + chartW, top + chartH);
+  ctx.stroke();
+
+  const n = items.length;
+  const gap = 16;
+  const barW = (chartW - gap*(n-1)) / n;
+
+  items.forEach((x, i)=>{
+    const h = (x.value / maxV) * (chartH * 0.92);
+    const bx = left + i*(barW+gap);
+    const by = top + chartH - h;
+
+    ctx.fillStyle = "rgba(37,99,235,0.18)";
+    ctx.fillRect(bx, by, barW, h);
+
+    ctx.fillStyle = "rgba(15,23,42,0.76)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(x.name, bx, top + chartH + 14);
+
+    ctx.fillStyle = "rgba(15,23,42,0.90)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(x.value.toFixed(3), bx, by - 6);
   });
 }
 
-function showStep(n){
-  state.step = n;
-  view1.classList.toggle("hidden", n !== 1);
-  view2.classList.toggle("hidden", n !== 2);
-  view3.classList.toggle("hidden", n !== 3);
-  renderSteps();
-  render();
+function inconsistencyHints(labels, A, topK = 3){
+  const n = labels.length;
+  const issues = [];
+
+  for(let i=0;i<n;i++){
+    for(let j=i+1;j<n;j++){
+      const direct = A[i][j];
+      if(!Number.isFinite(direct) || direct <= 0) continue;
+
+      let best = 0;
+      let bestK = -1;
+
+      for(let k=0;k<n;k++){
+        if(k === i || k === j) continue;
+        const via = A[i][k] * A[k][j];
+        if(!Number.isFinite(via) || via <= 0) continue;
+
+        const d = Math.abs(Math.log(direct) - Math.log(via));
+        if(d > best){
+          best = d;
+          bestK = k;
+        }
+      }
+
+      if(bestK >= 0){
+        issues.push({
+          i, j, k: bestK,
+          score: best,
+          text: `${labels[i]} vs ${labels[j]} (check with ${labels[bestK]})`
+        });
+      }
+    }
+  }
+
+  issues.sort((a,b)=>b.score-a.score);
+  return issues.slice(0, topK);
 }
 
-document.querySelectorAll(".navBtn").forEach(btn=>{
-  btn.addEventListener("click", ()=> showStep(Number(btn.dataset.step)));
-});
+function crMessage(cr){
+  if(cr <= 0.10){
+    return { level: "good", title: "Consistenza buona", text: `CR ${cr.toFixed(3)}. I confronti sono coerenti.` };
+  }
+  if(cr <= 0.20){
+    return { level: "mid", title: "Consistenza borderline", text: `CR ${cr.toFixed(3)}. Rivedi 1 o 2 confronti.` };
+  }
+  return { level: "warn", title: "Consistenza bassa", text: `CR ${cr.toFixed(3)}. Il ranking può cambiare. Rivedi i confronti suggeriti.` };
+}
 
-document.getElementById("btnReset").addEventListener("click", ()=>{
-  state.problem = { name: "Logistics", goal: "Select the best warehouse location" };
-  state.criteria = ["Transportation cost", "Delivery lead time", "Service reliability"];
-  state.alternatives = ["Location A", "Location B", "Location C"];
-  initMatrices();
-  showStep(1);
-  setStatus("Reset done.");
-});
+function crBadge(cr){
+  const m = crMessage(cr);
+  const cls = m.level === "good" ? "badge good" : (m.level === "mid" ? "badge mid" : "badge warn");
+  return `<span class="${cls}">${escapeHtml(m.title)}. ${escapeHtml(m.text)}</span>`;
+}
 
-document.getElementById("btnExport").addEventListener("click", ()=>{
-  const payload = computeResults();
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "ahp_results.json";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-});
-
-// ---------- Rendering: Step 1 ----------
-function renderProblem(){
-  view1.innerHTML = `
-    <div class="row">
-      <div>
-        <div class="panelTitle">Problem</div>
-        <label class="small muted">Name</label>
-        <input id="p_name" type="text" value="${escapeHtml(state.problem.name)}" />
-        <div style="height:10px"></div>
-        <label class="small muted">Goal</label>
-        <input id="p_goal" type="text" value="${escapeHtml(state.problem.goal)}" />
-      </div>
-
-      <div>
-        <div class="panelTitle">Scale</div>
-        <div class="badge">1 equal, 3 moderate, 5 strong, 7 major, 9 extreme</div>
-        <div style="height:12px"></div>
-        <div class="small muted">Results show CR (Consistency Ratio). Target CR ≤ 0.10.</div>
-      </div>
-    </div>
-
-    <div class="divider"></div>
-
-    <div class="row">
-      <div>
-        <div class="panelTitle">Criteria</div>
-        <div id="crit_list"></div>
-        <button class="btn" id="crit_add">Add criterion</button>
-      </div>
-
-      <div>
-        <div class="panelTitle">Alternatives</div>
-        <div id="alt_list"></div>
-        <button class="btn" id="alt_add">Add alternative</button>
-      </div>
+function hintsHtml(hints){
+  if(hints.length === 0) return "";
+  return `
+    <div style="margin-top:10px;">
+      <div class="small muted" style="margin-bottom:6px;">Suggested checks</div>
+      <ul style="margin:0; padding-left: 18px; color: var(--muted); font-size: 13px;">
+        ${hints.map(h=>`<li>${escapeHtml(h.text)}</li>`).join("")}
+      </ul>
     </div>
   `;
+}
 
-  const pName = document.getElementById("p_name");
-  const pGoal = document.getElementById("p_goal");
-  pName.addEventListener("input", e => state.problem.name = e.target.value);
-  pGoal.addEventListener("input", e => state.problem.goal = e.target.value);
+function escapeHtml(s){
+  return String(s)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;");
+}
 
-  renderEditableList("crit_list", state.criteria, (arr)=> {
-    state.criteria = arr;
-    initMatrices();
-    render();
-  }, 2);
+function loadState(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw) return defaultState();
+  try{
+    const st = JSON.parse(raw);
+    if(!st.problem || !Array.isArray(st.criteria) || !Array.isArray(st.alternatives)) return defaultState();
+    if(!Array.isArray(st.criteriaMatrix) || !Array.isArray(st.altMatrices)) initMatrices(st);
+    if(typeof st.activeCritIdx !== "number") st.activeCritIdx = 0;
+    return st;
+  }catch{
+    return defaultState();
+  }
+}
 
-  renderEditableList("alt_list", state.alternatives, (arr)=> {
-    state.alternatives = arr;
-    initMatrices();
-    render();
-  }, 2);
+function saveState(st){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
+}
 
-  document.getElementById("crit_add").addEventListener("click", ()=>{
-    state.criteria.push(`C${state.criteria.length+1}`);
-    initMatrices();
-    render();
-  });
+function setStatus(msg){
+  const el = document.getElementById("status");
+  if(el) el.textContent = msg || "";
+}
 
-  document.getElementById("alt_add").addEventListener("click", ()=>{
-    state.alternatives.push(`A${state.alternatives.length+1}`);
-    initMatrices();
-    render();
-  });
+function wireNavButtons(st){
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+
+  if(prevBtn){
+    prevBtn.addEventListener("click", ()=>{
+      saveState(st);
+      const page = document.body.dataset.page;
+      if(page === "matrices") location.href = "setup.html";
+      if(page === "results") location.href = "matrices.html";
+    });
+  }
+
+  if(nextBtn){
+    nextBtn.addEventListener("click", ()=>{
+      saveState(st);
+      const page = document.body.dataset.page;
+      if(page === "setup") location.href = "matrices.html";
+      if(page === "matrices") location.href = "results.html";
+    });
+  }
+}
+
+function wireCommonButtons(st){
+  const reset = document.getElementById("btnReset");
+  if(reset){
+    reset.addEventListener("click", ()=>{
+      const fresh = defaultState();
+      saveState(fresh);
+      location.href = "setup.html";
+    });
+  }
+
+  const exp = document.getElementById("btnExport");
+  if(exp){
+    exp.addEventListener("click", ()=>{
+      const payload = computeResults(st);
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ahp_results.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+  }
 }
 
 function renderEditableList(containerId, items, onChange, minLen){
@@ -243,102 +403,12 @@ function renderEditableList(containerId, items, onChange, minLen){
   });
 }
 
-function escapeHtml(s){
-  return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
-}
-
-// ---------- Rendering: Step 2 ----------
-function renderMatrices(){
-  const critSolve = ahpSolve(state.criteriaMatrix);
-  const crBadge = crToBadge(critSolve.cr);
-
-  view2.innerHTML = `
-    <div class="row">
-      <div>
-        <div class="panelTitle">Criteria comparisons</div>
-        <div class="small muted">Pairwise sliders update the matrix. ${crBadge}</div>
-        <div style="height:10px"></div>
-        <div id="crit_pairs"></div>
-      </div>
-      <div>
-        <div class="panelTitle">Criteria matrix</div>
-        <div id="crit_matrix"></div>
-      </div>
-    </div>
-
-    <div class="divider"></div>
-
-    <div class="panelTitle">Alternative comparisons by criterion</div>
-    <div id="alt_tabs" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 10px;"></div>
-    <div class="row">
-      <div>
-        <div id="alt_pairs"></div>
-      </div>
-      <div>
-        <div id="alt_matrix"></div>
-      </div>
-    </div>
-  `;
-
-  renderPairwiseBlock("crit_pairs", state.criteria, state.criteriaMatrix, (A)=> {
-    state.criteriaMatrix = A;
-    renderMatrices();
-  });
-
-  document.getElementById("crit_matrix").innerHTML = matrixTable(state.criteria, state.criteriaMatrix);
-
-  // Tabs for criteria
-  const tabs = document.getElementById("alt_tabs");
-  let activeIdx = state._activeCritIdx ?? 0;
-  if(activeIdx >= state.criteria.length) activeIdx = 0;
-  state._activeCritIdx = activeIdx;
-
-  tabs.innerHTML = "";
-  state.criteria.forEach((c, i)=>{
-    const b = document.createElement("button");
-    b.className = "btn";
-    b.style.width = "auto";
-    b.textContent = c;
-    b.style.opacity = i === activeIdx ? "1" : "0.75";
-    b.addEventListener("click", ()=>{
-      state._activeCritIdx = i;
-      renderMatrices();
-    });
-    tabs.appendChild(b);
-  });
-
-  const A = state.altMatrices[activeIdx];
-  const solve = ahpSolve(A);
-
-  document.getElementById("alt_pairs").innerHTML =
-    `<div class="small muted">${state.criteria[activeIdx]} comparisons. ${crToBadge(solve.cr)}</div><div style="height:10px"></div>` +
-    pairwiseUI(state.alternatives, A, (B)=> {
-      state.altMatrices[activeIdx] = B;
-      renderMatrices();
-    });
-
-  document.getElementById("alt_matrix").innerHTML = matrixTable(state.alternatives, A);
-}
-
-function crToBadge(cr){
-  const ok = cr <= 0.10;
-  const cls = ok ? "badge good" : "badge warn";
-  const label = ok ? "CR OK" : "CR high";
-  return `<span class="${cls}">${label}: ${cr.toFixed(3)}</span>`;
-}
-
-function renderPairwiseBlock(containerId, labels, A, onUpdate){
-  const root = document.getElementById(containerId);
-  root.innerHTML = pairwiseUI(labels, A, onUpdate);
-}
-
 function pairwiseUI(labels, A, onUpdate){
   const n = labels.length;
   let html = "";
   for(let i=0;i<n;i++){
     for(let j=i+1;j<n;j++){
       const aij = A[i][j];
-      // represent value as 1..9 and a preferRight boolean
       let preferRight = false;
       let v = aij;
       if(v < 1){
@@ -351,9 +421,12 @@ function pairwiseUI(labels, A, onUpdate){
         <div class="pairRow" data-i="${i}" data-j="${j}">
           <div>${escapeHtml(labels[i])}</div>
           <div class="pairMid">
-            <label><input type="checkbox" class="pref" ${preferRight ? "checked" : ""}/> prefer right</label>
+            <div class="sidePick">
+              <button class="pickLeft">Left</button>
+              <button class="pickRight">Right</button>
+            </div>
             <input type="range" class="rng" min="1" max="9" step="1" value="${v}" />
-            <div style="width:22px; text-align:right">${v}</div>
+            <div class="valBox" style="width:22px; text-align:right">${v}</div>
           </div>
           <div style="text-align:right">${escapeHtml(labels[j])}</div>
         </div>
@@ -361,85 +434,103 @@ function pairwiseUI(labels, A, onUpdate){
     }
   }
 
-  // attach events after insert
   setTimeout(()=>{
     document.querySelectorAll(".pairRow").forEach(row=>{
       const i = Number(row.dataset.i);
       const j = Number(row.dataset.j);
+
       const rng = row.querySelector(".rng");
-      const pref = row.querySelector(".pref");
-      const valBox = row.querySelector(".pairMid div:last-child");
+      const valBox = row.querySelector(".valBox");
+      const pickLeft = row.querySelector(".pickLeft");
+      const pickRight = row.querySelector(".pickRight");
+
+      let preferRight = false;
+      if(A[i][j] < 1) preferRight = true;
+
+      const syncButtons = ()=>{
+        pickLeft.classList.toggle("active", !preferRight);
+        pickRight.classList.toggle("active", preferRight);
+      };
 
       const apply = ()=>{
         const raw = Number(rng.value);
         valBox.textContent = String(raw);
-        const preferRight = pref.checked;
-        const v = preferRight ? 1/raw : raw;
-        const B = setPairwise(A, i, j, v);
+        const val = preferRight ? 1/raw : raw;
+        const B = setPairwise(A, i, j, val);
         onUpdate(B);
       };
 
+      pickLeft.addEventListener("click", ()=>{
+        preferRight = false;
+        syncButtons();
+        apply();
+      });
+
+      pickRight.addEventListener("click", ()=>{
+        preferRight = true;
+        syncButtons();
+        apply();
+      });
+
       rng.addEventListener("input", apply);
-      pref.addEventListener("change", apply);
+
+      syncButtons();
     });
   }, 0);
 
   return html;
 }
 
-function matrixTable(labels, A){
-  const n = labels.length;
-  let html = `<table><thead><tr><th></th>`;
-  for(let j=0;j<n;j++) html += `<th>${escapeHtml(labels[j])}</th>`;
-  html += `</tr></thead><tbody>`;
-  for(let i=0;i<n;i++){
-    html += `<tr><td>${escapeHtml(labels[i])}</td>`;
-    for(let j=0;j<n;j++){
-      html += `<td>${Number(A[i][j]).toFixed(3)}</td>`;
-    }
-    html += `</tr>`;
-  }
-  html += `</tbody></table>`;
-  return html;
+function matrixHeatmap(containerId, title){
+  return `
+    <div class="heatWrap">
+      <div class="heatTitle">
+        <div class="panelTitle" style="margin:0;">${escapeHtml(title)}</div>
+        <div class="heatLegend">
+          <span>low</span>
+          <span class="heatLegendBar"></span>
+          <span>high</span>
+        </div>
+      </div>
+      <canvas class="heatCanvas" id="${containerId}" width="900" height="560"></canvas>
+    </div>
+  `;
 }
 
-// ---------- Rendering: Step 3 ----------
-function computeResults(){
-  const crit = ahpSolve(state.criteriaMatrix);
+function computeResults(st){
+  const crit = ahpSolve(st.criteriaMatrix);
+  const altSolves = st.altMatrices.map(A => ahpSolve(A));
 
-  const altSolves = state.altMatrices.map(A => ahpSolve(A));
-  const W_alt = state.altMatrices.map((_, idx) => altSolves[idx].weights); // per criterion, weights over alternatives
+  const m = st.alternatives.length;
+  const n = st.criteria.length;
 
-  // final scores: sum_j (wCrit[j] * wAlt_j[i])
-  const m = state.alternatives.length;
-  const n = state.criteria.length;
   const scores = Array(m).fill(0);
   for(let i=0;i<m;i++){
-    let s=0;
+    let s = 0;
     for(let j=0;j<n;j++){
-      s += crit.weights[j] * W_alt[j][i];
+      s += crit.weights[j] * altSolves[j].weights[i];
     }
-    scores[i]=s;
+    scores[i] = s;
   }
 
-  const ranking = state.alternatives
+  const ranking = st.alternatives
     .map((name, i)=>({ name, score: scores[i] }))
-    .sort((a,b)=>b.score-a.score);
+    .sort((a,b)=> b.score - a.score);
 
   return {
-    problem: state.problem,
-    criteria: state.criteria,
-    alternatives: state.alternatives,
-    criteriaMatrix: state.criteriaMatrix,
-    altMatrices: state.altMatrices,
+    problem: st.problem,
+    criteria: st.criteria,
+    alternatives: st.alternatives,
+    criteriaMatrix: st.criteriaMatrix,
+    altMatrices: st.altMatrices,
     results: {
       criteriaWeights: crit.weights,
       criteriaCR: crit.cr,
-      altWeightsByCriterion: state.criteria.reduce((acc, c, i)=>{
-        acc[c] = W_alt[i];
+      altWeightsByCriterion: st.criteria.reduce((acc, c, i)=>{
+        acc[c] = altSolves[i].weights;
         return acc;
       }, {}),
-      altCRByCriterion: state.criteria.reduce((acc, c, i)=>{
+      altCRByCriterion: st.criteria.reduce((acc, c, i)=>{
         acc[c] = altSolves[i].cr;
         return acc;
       }, {}),
@@ -449,47 +540,174 @@ function computeResults(){
   };
 }
 
-function renderResults(){
-  const res = computeResults();
+function renderSetupPage(st){
+  const view = document.getElementById("view");
 
-  const critRows = res.criteria.map((c, i)=>({ name: c, value: res.results.criteriaWeights[i] }));
-  const scoreRows = res.alternatives.map((a, i)=>({ name: a, value: res.results.finalScores[i] }));
-
-  const best = res.results.ranking[0];
-
-  view3.innerHTML = `
+  view.innerHTML = `
     <div class="row">
       <div>
-        <div class="panelTitle">Summary</div>
-        <div style="font-size:18px; font-weight:700; margin-top:6px">${escapeHtml(best.name)}</div>
-        <div class="small muted">Top ranked alternative</div>
+        <div class="panelTitle">Problem</div>
+        <label class="small muted">Name</label>
+        <input id="p_name" type="text" value="${escapeHtml(st.problem.name)}" />
         <div style="height:10px"></div>
-        ${crToBadge(res.results.criteriaCR)}
-        <div style="height:10px"></div>
-        <div class="small muted">Final score: ${best.score.toFixed(4)}</div>
-        <div class="divider"></div>
-        <div class="panelTitle">Ranking</div>
-        ${rankingTable(res.results.ranking)}
+        <label class="small muted">Goal</label>
+        <input id="p_goal" type="text" value="${escapeHtml(st.problem.goal)}" />
       </div>
 
       <div>
-        <div class="panelTitle">Charts</div>
-        <div class="small muted">Criteria weights and final scores.</div>
-        <div style="height:10px"></div>
-        <canvas id="chartCrit" width="900" height="320"></canvas>
-        <div style="height:14px"></div>
-        <canvas id="chartScore" width="900" height="320"></canvas>
+        <div class="panelTitle">Scale</div>
+        <div class="badge">1 equal, 3 moderate, 5 strong, 7 major, 9 extreme</div>
+        <div style="height:12px"></div>
+        <div class="small muted">Fill criteria and alternatives, then go to matrices.</div>
       </div>
     </div>
 
     <div class="divider"></div>
 
-    <div class="panelTitle">Alternative weights by criterion</div>
-    ${altWeightsTables(res)}
+    <div class="row">
+      <div>
+        <div class="panelTitle">Criteria</div>
+        <div id="crit_list"></div>
+        <button class="btn inline" id="crit_add">Add criterion</button>
+      </div>
+
+      <div>
+        <div class="panelTitle">Alternatives</div>
+        <div id="alt_list"></div>
+        <button class="btn inline" id="alt_add">Add alternative</button>
+      </div>
+    </div>
   `;
 
-  drawBarChart("chartCrit", "Criteria weights", critRows);
-  drawBarChart("chartScore", "Final scores", scoreRows);
+  document.getElementById("p_name").addEventListener("input", e=>{
+    st.problem.name = e.target.value;
+    saveState(st);
+  });
+
+  document.getElementById("p_goal").addEventListener("input", e=>{
+    st.problem.goal = e.target.value;
+    saveState(st);
+  });
+
+  renderEditableList("crit_list", st.criteria, (arr)=>{
+    st.criteria = arr;
+    st.activeCritIdx = 0;
+    initMatrices(st);
+    saveState(st);
+    renderSetupPage(st);
+  }, 2);
+
+  renderEditableList("alt_list", st.alternatives, (arr)=>{
+    st.alternatives = arr;
+    initMatrices(st);
+    saveState(st);
+    renderSetupPage(st);
+  }, 2);
+
+  document.getElementById("crit_add").addEventListener("click", ()=>{
+    st.criteria.push(`C${st.criteria.length + 1}`);
+    initMatrices(st);
+    saveState(st);
+    renderSetupPage(st);
+  });
+
+  document.getElementById("alt_add").addEventListener("click", ()=>{
+    st.alternatives.push(`A${st.alternatives.length + 1}`);
+    initMatrices(st);
+    saveState(st);
+    renderSetupPage(st);
+  });
+}
+
+function renderMatricesPage(st){
+  const view = document.getElementById("view");
+
+  const critSolve = ahpSolve(st.criteriaMatrix);
+  const critHints = inconsistencyHints(st.criteria, st.criteriaMatrix, 3);
+
+  let activeIdx = st.activeCritIdx ?? 0;
+  if(activeIdx >= st.criteria.length) activeIdx = 0;
+  st.activeCritIdx = activeIdx;
+
+  const A = st.altMatrices[activeIdx];
+  const altSolve = ahpSolve(A);
+  const altHints = inconsistencyHints(st.alternatives, A, 3);
+
+  view.innerHTML = `
+    <div class="panelTitle">Criteria comparisons</div>
+    <div class="small muted">${crBadge(critSolve.cr)}${critSolve.cr > 0.10 ? hintsHtml(critHints) : ""}</div>
+    <div style="height:10px"></div>
+
+    <div class="matrixLayout">
+      <div class="stickyBox">
+        ${matrixHeatmap("hm_crit", "Criteria matrix")}
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button class="btn inline" id="crit_reset">Reset criteria</button>
+        </div>
+      </div>
+      <div>
+        ${pairwiseUI(st.criteria, st.criteriaMatrix, (B)=>{
+          st.criteriaMatrix = B;
+          saveState(st);
+          renderMatricesPage(st);
+        })}
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="panelTitle">Alternatives by criterion</div>
+    <div class="tabs" id="critTabs"></div>
+    <div class="small muted">${crBadge(altSolve.cr)}${altSolve.cr > 0.10 ? hintsHtml(altHints) : ""}</div>
+    <div style="height:10px"></div>
+
+    <div class="matrixLayout">
+      <div class="stickyBox">
+        ${matrixHeatmap("hm_alt", "Alternatives matrix")}
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button class="btn inline" id="alt_reset">Reset this matrix</button>
+        </div>
+      </div>
+      <div id="altPairs"></div>
+    </div>
+  `;
+
+  const tabs = document.getElementById("critTabs");
+  tabs.innerHTML = "";
+  st.criteria.forEach((c, i)=>{
+    const b = document.createElement("button");
+    b.className = "tabBtn" + (i === activeIdx ? " active" : "");
+    b.textContent = c;
+    b.addEventListener("click", ()=>{
+      st.activeCritIdx = i;
+      saveState(st);
+      renderMatricesPage(st);
+    });
+    tabs.appendChild(b);
+  });
+
+  document.getElementById("altPairs").innerHTML = pairwiseUI(st.alternatives, A, (B)=>{
+    st.altMatrices[activeIdx] = B;
+    saveState(st);
+    renderMatricesPage(st);
+  });
+
+  document.getElementById("crit_reset").addEventListener("click", ()=>{
+    st.criteriaMatrix = identityMatrix(st.criteria.length);
+    saveState(st);
+    renderMatricesPage(st);
+  });
+
+  document.getElementById("alt_reset").addEventListener("click", ()=>{
+    st.altMatrices[activeIdx] = identityMatrix(st.alternatives.length);
+    saveState(st);
+    renderMatricesPage(st);
+  });
+
+  setTimeout(()=>{
+    drawMatrixHeatmap("hm_crit", st.criteria, st.criteriaMatrix);
+    drawMatrixHeatmap("hm_alt", st.alternatives, st.altMatrices[activeIdx]);
+  }, 0);
 }
 
 function rankingTable(items){
@@ -501,6 +719,17 @@ function rankingTable(items){
   return html;
 }
 
+function weightsTable(labels, weights){
+  return `
+    <table>
+      <thead><tr><th>Item</th><th>Weight</th></tr></thead>
+      <tbody>
+        ${labels.map((x,i)=>`<tr><td>${escapeHtml(x)}</td><td>${Number(weights[i]).toFixed(6)}</td></tr>`).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
 function altWeightsTables(res){
   let html = `<div class="row">`;
   res.criteria.forEach((c)=>{
@@ -508,14 +737,9 @@ function altWeightsTables(res){
     const cr = res.results.altCRByCriterion[c];
     html += `
       <div>
-        <div class="small muted">${escapeHtml(c)} ${crToBadge(cr)}</div>
+        <div class="small muted">${escapeHtml(c)} ${crBadge(cr)}</div>
         <div style="height:8px"></div>
-        <table>
-          <thead><tr><th>Alternative</th><th>Weight</th></tr></thead>
-          <tbody>
-            ${res.alternatives.map((a,i)=>`<tr><td>${escapeHtml(a)}</td><td>${w[i].toFixed(6)}</td></tr>`).join("")}
-          </tbody>
-        </table>
+        ${weightsTable(res.alternatives, w)}
       </div>
     `;
   });
@@ -523,70 +747,69 @@ function altWeightsTables(res){
   return html;
 }
 
-// Simple canvas bar chart
-function drawBarChart(canvasId, title, items){
-  const c = document.getElementById(canvasId);
-  const ctx = c.getContext("2d");
+function renderResultsPage(st){
+  const view = document.getElementById("view");
+  const res = computeResults(st);
+  const best = res.results.ranking[0];
 
-  const W = c.width;
-  const H = c.height;
+  view.innerHTML = `
+    <div class="row">
+      <div>
+        <div class="panelTitle">Key results</div>
+        <div style="font-size:18px; font-weight:700; margin-top:6px">${escapeHtml(best.name)}</div>
+        <div class="small muted">Top ranked alternative. Score ${best.score.toFixed(4)}</div>
+        <div style="height:10px"></div>
+        ${crBadge(res.results.criteriaCR)}
+        <div class="divider"></div>
+        <div class="panelTitle">Ranking</div>
+        ${rankingTable(res.results.ranking)}
+      </div>
 
-  ctx.clearRect(0,0,W,H);
+      <div>
+        <div class="panelTitle">Charts</div>
+        <canvas class="chart" id="chartCrit" width="900" height="320"></canvas>
+        <div style="height:12px"></div>
+        <canvas class="chart" id="chartScore" width="900" height="320"></canvas>
+      </div>
+    </div>
 
-  // title
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = "18px system-ui";
-  ctx.fillText(title, 18, 28);
+    <div class="divider"></div>
 
-  const maxV = Math.max(...items.map(x=>x.value), 0.00001);
-  const left = 18;
-  const right = 18;
-  const top = 44;
-  const bottom = 18;
+    <div class="panelTitle">Criteria weights</div>
+    ${weightsTable(res.criteria, res.results.criteriaWeights)}
 
-  const chartW = W - left - right;
-  const chartH = H - top - bottom;
+    <div class="divider"></div>
 
-  // axes baseline
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(left, top + chartH);
-  ctx.lineTo(left + chartW, top + chartH);
-  ctx.stroke();
+    <div class="panelTitle">Alternative weights by criterion</div>
+    ${altWeightsTables(res)}
+  `;
 
-  const n = items.length;
-  const gap = 16;
-  const barW = (chartW - gap*(n-1)) / n;
+  const critRows = res.criteria.map((c, i)=>({ name: c, value: res.results.criteriaWeights[i] }));
+  const scoreRows = res.alternatives.map((a, i)=>({ name: a, value: res.results.finalScores[i] }));
 
-  items.forEach((x, i)=>{
-    const h = (x.value / maxV) * (chartH * 0.92);
-    const bx = left + i*(barW+gap);
-    const by = top + chartH - h;
-
-    // bar
-    ctx.fillStyle = "rgba(255,255,255,0.20)";
-    ctx.fillRect(bx, by, barW, h);
-
-    // label
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(x.name, bx, top + chartH + 14);
-
-    // value
-    ctx.fillStyle = "rgba(255,255,255,0.90)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(x.value.toFixed(3), bx, by - 6);
-  });
+  setTimeout(()=>{
+    drawBarChart("chartCrit", "Criteria weights", critRows);
+    drawBarChart("chartScore", "Final scores", scoreRows);
+  }, 0);
 }
 
-// ---------- Main render ----------
-function render(){
-  setStatus(`Criteria: ${state.criteria.length}, Alternatives: ${state.alternatives.length}`);
-  if(state.step === 1) renderProblem();
-  if(state.step === 2) renderMatrices();
-  if(state.step === 3) renderResults();
-  renderSteps();
+function main(){
+  const st = loadState();
+
+  wireNavButtons(st);
+  wireCommonButtons(st);
+
+  setStatus(`Criteria: ${st.criteria.length}, Alternatives: ${st.alternatives.length}`);
+
+  const page = document.body.dataset.page;
+  const view = document.getElementById("view");
+  if(!view) return;
+
+  if(page === "setup") renderSetupPage(st);
+  if(page === "matrices") renderMatricesPage(st);
+  if(page === "results") renderResultsPage(st);
+
+  saveState(st);
 }
 
-showStep(1);
+document.addEventListener("DOMContentLoaded", main);
