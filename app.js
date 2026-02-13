@@ -19,7 +19,7 @@ function defaultState(){
 }
 
 function identityMatrix(n){
-  return Array.from({length:n}, (_,i)=>Array.from({length:n}, (_,j)=> i===j ? 1 : 1));
+  return Array.from({length:n}, (_,i)=>Array.from({length:n}, (_,j)=> (i===j ? 1 : 1)));
 }
 
 function initMatrices(st){
@@ -41,7 +41,6 @@ function loadState(){
     if(st.activeCritIdx < 0) st.activeCritIdx = 0;
     if(st.activeCritIdx >= st.criteria.length) st.activeCritIdx = 0;
 
-    // Ensure matrices match sizes
     if(st.criteriaMatrix.length !== st.criteria.length) initMatrices(st);
     if(st.altMatrices.length !== st.criteria.length) initMatrices(st);
     if(st.altMatrices.some(m => !Array.isArray(m) || m.length !== st.alternatives.length)) initMatrices(st);
@@ -74,10 +73,11 @@ function powerIterationWeights(A, maxIter=1500, tol=1e-11){
   for(let it=0; it<maxIter; it++){
     const Aw = Array(n).fill(0);
     for(let i=0;i<n;i++){
-      let s=0;
+      let s = 0;
       for(let j=0;j<n;j++) s += A[i][j] * w[j];
-      Aw[i]=s;
+      Aw[i] = s;
     }
+
     const sum = Aw.reduce((a,b)=>a+b,0);
     const wNew = Aw.map(x=>x/sum);
 
@@ -90,12 +90,12 @@ function powerIterationWeights(A, maxIter=1500, tol=1e-11){
 
   const Aw2 = Array(n).fill(0);
   for(let i=0;i<n;i++){
-    let s=0;
+    let s = 0;
     for(let j=0;j<n;j++) s += A[i][j] * w[j];
-    Aw2[i]=s;
+    Aw2[i] = s;
   }
-  const lambdaMax = Aw2.reduce((a,v,i)=> a + v / w[i], 0) / n;
 
+  const lambdaMax = Aw2.reduce((a,v,i)=> a + (v / w[i]), 0) / n;
   return { weights: w, lambdaMax };
 }
 
@@ -135,7 +135,7 @@ function crMessage(cr){
   if(cr <= 0.20){
     return { level: "mid", title: "Consistenza borderline", text: `CR ${cr.toFixed(3)}. Rivedi 1 o 2 confronti.` };
   }
-  return { level: "warn", title: "Consistenza bassa", text: `CR ${cr.toFixed(3)}. Il ranking può cambiare. Rivedi i confronti suggeriti.` };
+  return { level: "warn", title: "Consistenza bassa", text: `CR ${cr.toFixed(3)}. Il ranking può cambiare. Rivedi i confronti.` };
 }
 
 function crBadge(cr){
@@ -197,8 +197,7 @@ function drawMatrixHeatmap(canvasId, labels, A){
     for(let j=0;j<n;j++){
       const v = Number(A[i][j]);
       if(!Number.isFinite(v) || v <= 0) continue;
-      const lv = Math.log(v);
-      maxAbs = Math.max(maxAbs, Math.abs(lv));
+      maxAbs = Math.max(maxAbs, Math.abs(Math.log(v)));
     }
   }
   if(maxAbs === 0) maxAbs = 1;
@@ -307,8 +306,8 @@ function drawBarChart(canvasId, title, items){
   });
 }
 
-// -------------------- Pairwise UI binding --------------------
-function pairwiseUI(labels, A){
+// -------------------- Pairwise --------------------
+function pairwiseHTML(labels, A){
   const n = labels.length;
   let html = "";
 
@@ -340,7 +339,7 @@ function pairwiseUI(labels, A){
   return html;
 }
 
-function bindPairwiseHandlers(rootEl, A, onUpdate){
+function bindPairwise(rootEl, A, onUpdate){
   if(!rootEl) return;
 
   rootEl.querySelectorAll(".pairRow").forEach(row=>{
@@ -392,43 +391,6 @@ function bindPairwiseHandlers(rootEl, A, onUpdate){
 }
 
 // -------------------- Pages --------------------
-function renderEditableList(containerId, items, onChange, minLen){
-  const root = document.getElementById(containerId);
-  if(!root) return;
-
-  root.innerHTML = "";
-  items.forEach((v, i)=>{
-    const row = document.createElement("div");
-    row.className = "kv";
-    row.style.marginBottom = "8px";
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = v;
-    input.addEventListener("input", (e)=>{
-      const next = items.slice();
-      next[i] = e.target.value;
-      onChange(next);
-    });
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn";
-    btn.textContent = "-";
-    btn.disabled = items.length <= minLen;
-
-    btn.addEventListener("click", ()=>{
-      if(items.length <= minLen) return;
-      const next = items.filter((_,k)=>k!==i);
-      onChange(next);
-    });
-
-    row.appendChild(input);
-    row.appendChild(btn);
-    root.appendChild(row);
-  });
-}
-
 function renderSetupPage(st){
   const view = document.getElementById("view");
   if(!view) return;
@@ -469,12 +431,15 @@ function renderSetupPage(st){
     </div>
   `;
 
-  document.getElementById("p_name").addEventListener("input", e=>{
+  const pName = document.getElementById("p_name");
+  const pGoal = document.getElementById("p_goal");
+
+  pName.addEventListener("input", e=>{
     st.problem.name = e.target.value;
     saveState(st);
   });
 
-  document.getElementById("p_goal").addEventListener("input", e=>{
+  pGoal.addEventListener("input", e=>{
     st.problem.goal = e.target.value;
     saveState(st);
   });
@@ -560,8 +525,8 @@ function renderMatricesPage(st){
   `;
 
   const critPairsEl = document.getElementById("critPairs");
-  critPairsEl.innerHTML = pairwiseUI(st.criteria, st.criteriaMatrix);
-  bindPairwiseHandlers(critPairsEl, st.criteriaMatrix, (B)=>{
+  critPairsEl.innerHTML = pairwiseHTML(st.criteria, st.criteriaMatrix);
+  bindPairwise(critPairsEl, st.criteriaMatrix, (B)=>{
     st.criteriaMatrix = B;
     saveState(st);
     renderMatricesPage(st);
@@ -569,8 +534,8 @@ function renderMatricesPage(st){
   });
 
   const altPairsEl = document.getElementById("altPairs");
-  altPairsEl.innerHTML = pairwiseUI(st.alternatives, altMat);
-  bindPairwiseHandlers(altPairsEl, altMat, (B)=>{
+  altPairsEl.innerHTML = pairwiseHTML(st.alternatives, altMat);
+  bindPairwise(altPairsEl, altMat, (B)=>{
     st.altMatrices[activeIdx] = B;
     saveState(st);
     renderMatricesPage(st);
@@ -622,9 +587,9 @@ function computeResults(st){
 
   const scores = Array(m).fill(0);
   for(let i=0;i<m;i++){
-    let s=0;
+    let s = 0;
     for(let j=0;j<n;j++) s += crit.weights[j] * altSolves[j].weights[i];
-    scores[i]=s;
+    scores[i] = s;
   }
 
   const ranking = st.alternatives
@@ -635,6 +600,8 @@ function computeResults(st){
     problem: st.problem,
     criteria: st.criteria,
     alternatives: st.alternatives,
+    criteriaMatrix: st.criteriaMatrix,
+    altMatrices: st.altMatrices,
     results: {
       criteriaWeights: crit.weights,
       criteriaCR: crit.cr,
@@ -652,15 +619,6 @@ function computeResults(st){
   };
 }
 
-function rankingTable(items){
-  let html = `<table><thead><tr><th>Alternative</th><th>Score</th></tr></thead><tbody>`;
-  items.forEach(x=>{
-    html += `<tr><td>${escapeHtml(x.name)}</td><td>${x.score.toFixed(6)}</td></tr>`;
-  });
-  html += `</tbody></table>`;
-  return html;
-}
-
 function weightsTable(labels, weights){
   return `
     <table>
@@ -670,6 +628,15 @@ function weightsTable(labels, weights){
       </tbody>
     </table>
   `;
+}
+
+function rankingTable(items){
+  let html = `<table><thead><tr><th>Alternative</th><th>Score</th></tr></thead><tbody>`;
+  items.forEach(x=>{
+    html += `<tr><td>${escapeHtml(x.name)}</td><td>${x.score.toFixed(6)}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  return html;
 }
 
 function altWeightsTables(res){
@@ -737,7 +704,7 @@ function renderResultsPage(st){
   }, 0);
 }
 
-// -------------------- Navigation and actions --------------------
+// -------------------- Buttons --------------------
 function wireNavButtons(st){
   const prevBtn = document.getElementById("prevBtn");
   const nextBtn = document.getElementById("nextBtn");
@@ -746,7 +713,7 @@ function wireNavButtons(st){
     prevBtn.addEventListener("click", ()=>{
       saveState(st);
       const page = document.body.dataset.page;
-      if(page === "matrices") location.href = "setup.html";
+      if(page === "matrices") location.href = "index.html";
       if(page === "results") location.href = "matrices.html";
     });
   }
@@ -767,18 +734,14 @@ function wireCommonButtons(st){
     reset.addEventListener("click", ()=>{
       const fresh = defaultState();
       saveState(fresh);
-      location.href = "setup.html";
+      location.href = "index.html";
     });
   }
 
   const exp = document.getElementById("btnExport");
   if(exp){
     exp.addEventListener("click", ()=>{
-      const payload = {
-        ...computeResults(st),
-        criteriaMatrix: st.criteriaMatrix,
-        altMatrices: st.altMatrices
-      };
+      const payload = computeResults(st);
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -790,6 +753,42 @@ function wireCommonButtons(st){
       URL.revokeObjectURL(url);
     });
   }
+}
+
+function renderEditableList(containerId, items, onChange, minLen){
+  const root = document.getElementById(containerId);
+  if(!root) return;
+
+  root.innerHTML = "";
+  items.forEach((v, i)=>{
+    const row = document.createElement("div");
+    row.className = "kv";
+    row.style.marginBottom = "8px";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = v;
+    input.addEventListener("input", (e)=>{
+      const next = items.slice();
+      next[i] = e.target.value;
+      onChange(next);
+    });
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn";
+    btn.textContent = "-";
+    btn.disabled = items.length <= minLen;
+    btn.addEventListener("click", ()=>{
+      if(items.length <= minLen) return;
+      const next = items.filter((_,k)=>k!==i);
+      onChange(next);
+    });
+
+    row.appendChild(input);
+    row.appendChild(btn);
+    root.appendChild(row);
+  });
 }
 
 // -------------------- Main --------------------
