@@ -321,15 +321,13 @@ function pairwiseHTML(labels, A){
       }
 
       let direction;
-if(v === 1){
-  direction = "Equivalent";
-}else if(v > 1){
-  direction = "Left preferred";
-}else{
-  direction = "Right preferred";
-}
-});
-
+      if(v === 1){
+        direction = "Equivalent";
+      }else if(v > 1){
+        direction = "Left preferred";
+      }else{
+        direction = "Right preferred";
+      }
 
       html += `
         <div class="pairRow" data-i="${i}" data-j="${j}">
@@ -350,6 +348,7 @@ if(v === 1){
 
 
 
+
 function bindPairwise(rootEl, A, onUpdate){
   rootEl.querySelectorAll(".pairRow").forEach(row=>{
     const i = Number(row.dataset.i);
@@ -359,10 +358,11 @@ function bindPairwise(rootEl, A, onUpdate){
     const valBox = row.querySelector(".valBox");
     const dirBox = row.querySelector(".dirBox");
 
+    if(!rng || !valBox || !dirBox) return;
+
     const normalize = (raw)=>{
       let v = Number(raw);
 
-      // remove invalid values
       if(v === 0) v = 1;
       if(v === -1) v = -2;
 
@@ -375,20 +375,31 @@ function bindPairwise(rootEl, A, onUpdate){
       return v;
     };
 
+    const updateDirection = (v)=>{
+      if(v === 1){
+        dirBox.textContent = "Equivalent";
+      }else if(v > 1){
+        dirBox.textContent = "Left preferred";
+      }else{
+        dirBox.textContent = "Right preferred";
+      }
+    };
+
     const apply = ()=>{
       const v = normalize(rng.value);
       rng.value = String(v);
 
       valBox.textContent = v;
-      dirBox.textContent =
-        v > 0 ? "Left preferred"
-              : "Right preferred";
+      updateDirection(v);
 
       const B = cloneMatrix(A);
 
-      if(v > 0){
+      if(v > 1){
         B[i][j] = v;
         B[j][i] = 1 / v;
+      }else if(v === 1){
+        B[i][j] = 1;
+        B[j][i] = 1;
       }else{
         const s = Math.abs(v);
         B[i][j] = 1 / s;
@@ -404,19 +415,17 @@ function bindPairwise(rootEl, A, onUpdate){
       const v = normalize(rng.value);
       rng.value = String(v);
 
-      if(v === 1){
-  dirBox.textContent = "Equivalent";
-}else if(v > 1){
-  dirBox.textContent = "Left preferred";
-}else{
-  dirBox.textContent = "Right preferred";
-}
-
+      valBox.textContent = v;
+      updateDirection(v);
     });
 
     rng.addEventListener("change", apply);
+
+    // inizializza correttamente al primo render
+    updateDirection(Number(rng.value));
   });
 }
+
 
 
 
