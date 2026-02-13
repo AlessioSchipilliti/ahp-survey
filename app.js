@@ -1,7 +1,4 @@
 // app.js
-// Single shared script for 3-page GitHub Pages AHP tool (setup, matrices, results)
-// Pages must have <body data-page="setup|matrices|results"> and a <div id="view"></div>
-
 const STORAGE_KEY = "ahp_state_pages_v1";
 
 // Random Index (Saaty)
@@ -13,10 +10,8 @@ function defaultState(){
     problem: { name: "Logistics", goal: "Select the best warehouse location" },
     criteria: ["Transportation cost", "Delivery lead time", "Service reliability"],
     alternatives: ["Location A", "Location B", "Location C"],
-
     criteriaMatrix: [],
     altMatrices: [],
-
     activeCritIdx: 0
   };
   initMatrices(st);
@@ -46,7 +41,7 @@ function loadState(){
     if(st.activeCritIdx < 0) st.activeCritIdx = 0;
     if(st.activeCritIdx >= st.criteria.length) st.activeCritIdx = 0;
 
-    // Ensure matrices match current sizes, else reset them
+    // Ensure matrices match sizes
     if(st.criteriaMatrix.length !== st.criteria.length) initMatrices(st);
     if(st.altMatrices.length !== st.criteria.length) initMatrices(st);
     if(st.altMatrices.some(m => !Array.isArray(m) || m.length !== st.alternatives.length)) initMatrices(st);
@@ -61,7 +56,7 @@ function saveState(st){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
 }
 
-// -------------------- Math helpers --------------------
+// -------------------- AHP math --------------------
 function cloneMatrix(A){ return A.map(r=>r.slice()); }
 
 function setPairwise(A, i, j, v){
@@ -72,7 +67,6 @@ function setPairwise(A, i, j, v){
   return B;
 }
 
-// power iteration to approximate principal eigenvector
 function powerIterationWeights(A, maxIter=1500, tol=1e-11){
   const n = A.length;
   let w = Array(n).fill(1/n);
@@ -148,55 +142,6 @@ function crBadge(cr){
   const m = crMessage(cr);
   const cls = m.level === "good" ? "badge good" : (m.level === "mid" ? "badge mid" : "badge warn");
   return `<span class="${cls}">${escapeHtml(m.title)}. ${escapeHtml(m.text)}</span>`;
-}
-
-function inconsistencyHints(labels, A, topK=3){
-  const n = labels.length;
-  const issues = [];
-
-  for(let i=0;i<n;i++){
-    for(let j=i+1;j<n;j++){
-      const direct = A[i][j];
-      if(!Number.isFinite(direct) || direct <= 0) continue;
-
-      let best = 0;
-      let bestK = -1;
-
-      for(let k=0;k<n;k++){
-        if(k === i || k === j) continue;
-        const via = A[i][k] * A[k][j];
-        if(!Number.isFinite(via) || via <= 0) continue;
-
-        const d = Math.abs(Math.log(direct) - Math.log(via));
-        if(d > best){
-          best = d;
-          bestK = k;
-        }
-      }
-
-      if(bestK >= 0){
-        issues.push({
-          score: best,
-          text: `${labels[i]} vs ${labels[j]} (check with ${labels[bestK]})`
-        });
-      }
-    }
-  }
-
-  issues.sort((a,b)=>b.score-a.score);
-  return issues.slice(0, topK);
-}
-
-function hintsHtml(hints){
-  if(!hints || hints.length === 0) return "";
-  return `
-    <div style="margin-top:10px;">
-      <div class="small muted" style="margin-bottom:6px;">Suggested checks</div>
-      <ul style="margin:0; padding-left: 18px; color: var(--muted); font-size: 13px;">
-        ${hints.map(h=>`<li>${escapeHtml(h.text)}</li>`).join("")}
-      </ul>
-    </div>
-  `;
 }
 
 // -------------------- Heatmap --------------------
@@ -362,7 +307,7 @@ function drawBarChart(canvasId, title, items){
   });
 }
 
-// -------------------- Controls: pairwise UI --------------------
+// -------------------- Pairwise UI binding --------------------
 function pairwiseUI(labels, A){
   const n = labels.length;
   let html = "";
@@ -395,7 +340,7 @@ function pairwiseUI(labels, A){
   return html;
 }
 
-function bindPairwiseHandlers(rootEl, labels, A, onUpdate){
+function bindPairwiseHandlers(rootEl, A, onUpdate){
   if(!rootEl) return;
 
   rootEl.querySelectorAll(".pairRow").forEach(row=>{
@@ -419,7 +364,6 @@ function bindPairwiseHandlers(rootEl, labels, A, onUpdate){
     const commit = ()=>{
       const raw = Number(rng.value);
       valBox.textContent = String(raw);
-
       const val = preferRight ? 1/raw : raw;
       const B = setPairwise(A, i, j, val);
       onUpdate(B);
@@ -447,8 +391,7 @@ function bindPairwiseHandlers(rootEl, labels, A, onUpdate){
   });
 }
 
-
-// -------------------- Page rendering --------------------
+// -------------------- Pages --------------------
 function renderEditableList(containerId, items, onChange, minLen){
   const root = document.getElementById(containerId);
   if(!root) return;
@@ -526,15 +469,12 @@ function renderSetupPage(st){
     </div>
   `;
 
-  const pName = document.getElementById("p_name");
-  const pGoal = document.getElementById("p_goal");
-
-  pName.addEventListener("input", e=>{
+  document.getElementById("p_name").addEventListener("input", e=>{
     st.problem.name = e.target.value;
     saveState(st);
   });
 
-  pGoal.addEventListener("input", e=>{
+  document.getElementById("p_goal").addEventListener("input", e=>{
     st.problem.goal = e.target.value;
     saveState(st);
   });
@@ -577,22 +517,18 @@ function renderMatricesPage(st){
   const view = document.getElementById("view");
   if(!view) return;
 
-  // criteria
   const critSolve = ahpSolve(st.criteriaMatrix);
-  const critHints = inconsistencyHints(st.criteria, st.criteriaMatrix, 3);
 
-  // active criterion for alt comparisons
   let activeIdx = st.activeCritIdx ?? 0;
   if(activeIdx < 0 || activeIdx >= st.criteria.length) activeIdx = 0;
   st.activeCritIdx = activeIdx;
 
-  const A = st.altMatrices[activeIdx];
-  const altSolve = ahpSolve(A);
-  const altHints = inconsistencyHints(st.alternatives, A, 3);
+  const altMat = st.altMatrices[activeIdx];
+  const altSolve = ahpSolve(altMat);
 
   view.innerHTML = `
     <div class="panelTitle">Criteria comparisons</div>
-    <div class="small muted">${crBadge(critSolve.cr)}${critSolve.cr > 0.10 ? hintsHtml(critHints) : ""}</div>
+    <div class="small muted">${crBadge(critSolve.cr)}</div>
     <div style="height:10px"></div>
 
     <div class="matrixLayout">
@@ -609,7 +545,7 @@ function renderMatricesPage(st){
 
     <div class="panelTitle">Alternatives by criterion</div>
     <div class="tabs" id="critTabs"></div>
-    <div class="small muted">${crBadge(altSolve.cr)}${altSolve.cr > 0.10 ? hintsHtml(altHints) : ""}</div>
+    <div class="small muted">${crBadge(altSolve.cr)}</div>
     <div style="height:10px"></div>
 
     <div class="matrixLayout">
@@ -623,26 +559,24 @@ function renderMatricesPage(st){
     </div>
   `;
 
-  // pairwise blocks
-const critPairsEl = document.getElementById("critPairs");
-critPairsEl.innerHTML = pairwiseUI(st.criteria, st.criteriaMatrix);
+  const critPairsEl = document.getElementById("critPairs");
+  critPairsEl.innerHTML = pairwiseUI(st.criteria, st.criteriaMatrix);
+  bindPairwiseHandlers(critPairsEl, st.criteriaMatrix, (B)=>{
+    st.criteriaMatrix = B;
+    saveState(st);
+    renderMatricesPage(st);
+    setStatus(st);
+  });
 
-bindPairwiseHandlers(critPairsEl, st.criteria, st.criteriaMatrix, (B)=>{
-  st.criteriaMatrix = B;
-  saveState(st);
-  renderMatricesPage(st);
-  setStatus(st);
-});
-
-
-  document.getElementById("altPairs").innerHTML = pairwiseUI(st.alternatives, A, (B)=>{
+  const altPairsEl = document.getElementById("altPairs");
+  altPairsEl.innerHTML = pairwiseUI(st.alternatives, altMat);
+  bindPairwiseHandlers(altPairsEl, altMat, (B)=>{
     st.altMatrices[activeIdx] = B;
     saveState(st);
     renderMatricesPage(st);
     setStatus(st);
   });
 
-  // tabs for selecting criterion
   const tabs = document.getElementById("critTabs");
   tabs.innerHTML = "";
   st.criteria.forEach((c, i)=>{
@@ -659,7 +593,6 @@ bindPairwiseHandlers(critPairsEl, st.criteria, st.criteriaMatrix, (B)=>{
     tabs.appendChild(b);
   });
 
-  // reset buttons
   document.getElementById("crit_reset").addEventListener("click", ()=>{
     st.criteriaMatrix = identityMatrix(st.criteria.length);
     saveState(st);
@@ -674,7 +607,6 @@ bindPairwiseHandlers(critPairsEl, st.criteria, st.criteriaMatrix, (B)=>{
     setStatus(st);
   });
 
-  // draw heatmaps after DOM
   setTimeout(()=>{
     drawMatrixHeatmap("hm_crit", st.criteria, st.criteriaMatrix);
     drawMatrixHeatmap("hm_alt", st.alternatives, st.altMatrices[activeIdx]);
@@ -691,9 +623,7 @@ function computeResults(st){
   const scores = Array(m).fill(0);
   for(let i=0;i<m;i++){
     let s=0;
-    for(let j=0;j<n;j++){
-      s += crit.weights[j] * altSolves[j].weights[i];
-    }
+    for(let j=0;j<n;j++) s += crit.weights[j] * altSolves[j].weights[i];
     scores[i]=s;
   }
 
@@ -708,6 +638,8 @@ function computeResults(st){
     results: {
       criteriaWeights: crit.weights,
       criteriaCR: crit.cr,
+      finalScores: scores,
+      ranking,
       altWeightsByCriterion: st.criteria.reduce((acc, c, i)=>{
         acc[c] = altSolves[i].weights;
         return acc;
@@ -715,9 +647,7 @@ function computeResults(st){
       altCRByCriterion: st.criteria.reduce((acc, c, i)=>{
         acc[c] = altSolves[i].cr;
         return acc;
-      }, {}),
-      finalScores: scores,
-      ranking
+      }, {})
     }
   };
 }
@@ -844,7 +774,11 @@ function wireCommonButtons(st){
   const exp = document.getElementById("btnExport");
   if(exp){
     exp.addEventListener("click", ()=>{
-      const payload = computeResults(st);
+      const payload = {
+        ...computeResults(st),
+        criteriaMatrix: st.criteriaMatrix,
+        altMatrices: st.altMatrices
+      };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
