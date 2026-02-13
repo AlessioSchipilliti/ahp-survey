@@ -811,4 +811,20 @@ function main(){
   saveState(st);
 }
 
-document.addEventListener("DOMContentLoaded", main);
+function boot(){
+  try{
+    main();
+  }catch(e){
+    console.error(e);
+  }
+}
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", boot);
+}else{
+  boot();
+}
+
+// utile su back/forward cache
+window.addEventListener("pageshow", boot);
+
