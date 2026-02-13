@@ -1,182 +1,50 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AHP Survey</title>
-
-  <style>
-    :root{
-      --bg: #f6f7fb;
-      --card: #ffffff;
-      --text: #111827;
-      --muted: #6b7280;
-      --border: #e5e7eb;
-      --shadow: 0 12px 30px rgba(0,0,0,0.10);
-      --radius: 14px;
-    }
-
-    * { box-sizing: border-box; }
-
-    body{
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .wrap{
-      max-width: 980px;
-      margin: 48px auto;
-      padding: 0 18px;
-    }
-
-    .header{
-      margin-bottom: 18px;
-    }
-
-    .title{
-      font-size: 30px;
-      line-height: 1.15;
-      margin: 0 0 10px 0;
-      letter-spacing: -0.2px;
-    }
-
-    .subtitle{
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.45;
-      font-size: 15px;
-    }
-
-    .grid{
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 16px;
-    }
-
-    @media (min-width: 900px){
-      .grid{
-        grid-template-columns: 1fr 340px;
-        align-items: start;
-      }
-    }
-
-    .card{
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-    }
-
-    .card-body{
-      padding: 18px;
-    }
-
-    .note{
-      border-left: 4px solid #c7d2fe;
-      background: #eef2ff;
-      border-radius: 12px;
-      padding: 14px 14px;
-      color: #1f2937;
-      line-height: 1.4;
-      font-size: 14px;
-    }
-
-    .note h3{
-      margin: 0 0 8px 0;
-      font-size: 14px;
-    }
-
-    .note ul{
-      margin: 0;
-      padding-left: 18px;
-    }
-
-    .note li{
-      margin: 6px 0;
-    }
-
-    .iframe-wrap{
-      overflow: hidden;
-      border-radius: var(--radius);
-    }
-
-    iframe{
-      width: 100%;
-      height: 1450px;
-      border: 0;
-      display: block;
-      background: #fff;
-    }
-
-    .footer{
-      margin-top: 14px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-      text-align: center;
-    }
-
-    .pill{
-      display: inline-block;
-      padding: 6px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: #ffffff;
-      color: var(--muted);
-      font-size: 12px;
-      margin-top: 12px;
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AHP Tool</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-
 <body>
   <div class="wrap">
-    <div class="header">
-      <h1 class="title">AHP Survey for Logistics Location</h1>
-      <p class="subtitle">
-        Please complete the pairwise comparisons. Your answers will be used to compute AHP weights.
-      </p>
-      <div class="pill">Scale: 1 equal importance, 9 extreme importance of the first item</div>
-    </div>
-
-    <div class="grid">
-      <div class="card">
-        <div class="iframe-wrap">
-          <!-- Replace the src value with your Google Form embed link -->
-          <iframe
-            src="https://docs.google.com/forms/d/e/1FAIpQLSdjZzYKsBVUJzwY2S1f4kT5xJD1SNzV6CHaWkOTrl4Gsp7loA/viewform?usp=dialog"
-            title="AHP Survey"
-            loading="lazy"
-          >
-            Loading…
-          </iframe>
-        </div>
+    <header class="top">
+      <div>
+        <h1 class="h1">AHP Tool</h1>
+        <div class="muted">Problem setup, pairwise comparisons, results.</div>
       </div>
+      <div class="steps" id="steps"></div>
+    </header>
 
-      <div class="card">
-        <div class="card-body">
-          <div class="note">
-            <h3>How to answer</h3>
-            <ul>
-              <li>If two items are equally important, choose 1.</li>
-              <li>If the first item is more important, choose 3, 5, 7, or 9.</li>
-              <li>If the second item is more important, choose the inverse option provided in the form.</li>
-              <li>Try to stay consistent across comparisons.</li>
-            </ul>
-          </div>
-          <p class="subtitle" style="margin-top: 14px;">
-            If the form feels too tall or shows an inner scrollbar, increase or decrease the iframe height value in this file.
-          </p>
+    <main class="grid">
+      <aside class="panel">
+        <div class="panelTitle">Navigation</div>
+        <button class="navBtn" data-step="1">1. Problem setup</button>
+        <button class="navBtn" data-step="2">2. Matrices setup</button>
+        <button class="navBtn" data-step="3">3. Results</button>
+
+        <div class="divider"></div>
+
+        <div class="panelTitle">Actions</div>
+        <button class="btn" id="btnExport">Export JSON</button>
+        <button class="btn" id="btnReset">Reset</button>
+
+        <div class="divider"></div>
+        <div class="small muted" id="status"></div>
+      </aside>
+
+      <section class="content">
+        <div class="card" id="view1"></div>
+        <div class="card" id="view2"></div>
+        <div class="card" id="view3"></div>
+
+        <div class="footer">
+          Built for GitHub Pages. No backend.
         </div>
-      </div>
-    </div>
-
-    <div class="footer">
-      Thank you for contributing.
-    </div>
+      </section>
+    </main>
   </div>
-    <!-- redeploy -->
+
+  <script src="app.js"></script>
 </body>
 </html>
