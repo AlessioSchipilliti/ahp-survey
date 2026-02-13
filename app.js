@@ -328,7 +328,7 @@ function wireNavButtons(st){
     prevBtn.addEventListener("click", ()=>{
       saveState(st);
       const page = document.body.dataset.page;
-      if(page === "matrices") location.href = "setup.html";
+      if(page === "matrices") location.href = "index.html";
       if(page === "results") location.href = "matrices.html";
     });
   }
@@ -349,7 +349,7 @@ function wireCommonButtons(st){
     reset.addEventListener("click", ()=>{
       const fresh = defaultState();
       saveState(fresh);
-      location.href = "setup.html";
+      location.href = "index.html";
     });
   }
 
