@@ -308,9 +308,11 @@ function pairwiseHTML(labels, A){
 
   for(let i=0;i<n;i++){
     for(let j=i+1;j<n;j++){
-
       const aij = A[i][j];
 
+      // encode current matrix value into slider value:
+      // aij >= 1  -> 1..9
+      // aij < 1   -> -9..-2 (no -1)
       let v;
       if(aij >= 1){
         v = Math.round(aij);
@@ -346,9 +348,6 @@ function pairwiseHTML(labels, A){
   return html;
 }
 
-
-
-
 function bindPairwise(rootEl, A, onUpdate){
   rootEl.querySelectorAll(".pairRow").forEach(row=>{
     const i = Number(row.dataset.i);
@@ -357,12 +356,12 @@ function bindPairwise(rootEl, A, onUpdate){
     const rng = row.querySelector(".rng");
     const valBox = row.querySelector(".valBox");
     const dirBox = row.querySelector(".dirBox");
-
     if(!rng || !valBox || !dirBox) return;
 
     const normalize = (raw)=>{
       let v = Number(raw);
 
+      // remove 0 and -1
       if(v === 0) v = 1;
       if(v === -1) v = -2;
 
@@ -371,11 +370,10 @@ function bindPairwise(rootEl, A, onUpdate){
       }else{
         v = Math.max(1, Math.min(9, v));
       }
-
       return v;
     };
 
-    const updateDirection = (v)=>{
+    const setDirection = (v)=>{
       if(v === 1){
         dirBox.textContent = "Equivalent";
       }else if(v > 1){
@@ -389,8 +387,8 @@ function bindPairwise(rootEl, A, onUpdate){
       const v = normalize(rng.value);
       rng.value = String(v);
 
-      valBox.textContent = v;
-      updateDirection(v);
+      valBox.textContent = String(v);
+      setDirection(v);
 
       const B = cloneMatrix(A);
 
@@ -414,17 +412,17 @@ function bindPairwise(rootEl, A, onUpdate){
     rng.addEventListener("input", ()=>{
       const v = normalize(rng.value);
       rng.value = String(v);
-
-      valBox.textContent = v;
-      updateDirection(v);
+      valBox.textContent = String(v);
+      setDirection(v);
     });
 
     rng.addEventListener("change", apply);
 
-    // inizializza correttamente al primo render
-    updateDirection(Number(rng.value));
+    // init
+    setDirection(normalize(rng.value));
   });
 }
+
 
 
 
