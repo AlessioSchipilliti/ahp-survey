@@ -406,15 +406,13 @@ function renderEditableList(containerId, items, onChange, minLen){
 function pairwiseUI(labels, A, onUpdate){
   const n = labels.length;
   let html = "";
+
   for(let i=0;i<n;i++){
     for(let j=i+1;j<n;j++){
       const aij = A[i][j];
-      let preferRight = false;
+
       let v = aij;
-      if(v < 1){
-        preferRight = true;
-        v = 1 / v;
-      }
+      if(v < 1) v = 1 / v;
       v = Math.min(9, Math.max(1, Math.round(v)));
 
       html += `
@@ -422,8 +420,8 @@ function pairwiseUI(labels, A, onUpdate){
           <div>${escapeHtml(labels[i])}</div>
           <div class="pairMid">
             <div class="sidePick">
-              <button class="pickLeft">Left</button>
-              <button class="pickRight">Right</button>
+              <button type="button" class="pickLeft">Left</button>
+              <button type="button" class="pickRight">Right</button>
             </div>
             <input type="range" class="rng" min="1" max="9" step="1" value="${v}" />
             <div class="valBox" style="width:22px; text-align:right">${v}</div>
@@ -432,6 +430,62 @@ function pairwiseUI(labels, A, onUpdate){
         </div>
       `;
     }
+  }
+
+  setTimeout(()=>{
+    document.querySelectorAll(".pairRow").forEach(row=>{
+      const i = Number(row.dataset.i);
+      const j = Number(row.dataset.j);
+
+      const rng = row.querySelector(".rng");
+      const valBox = row.querySelector(".valBox");
+      const pickLeft = row.querySelector(".pickLeft");
+      const pickRight = row.querySelector(".pickRight");
+
+      let preferRight = A[i][j] < 1;
+
+      const syncButtons = ()=>{
+        pickLeft.classList.toggle("active", !preferRight);
+        pickRight.classList.toggle("active", preferRight);
+      };
+
+      const commit = ()=>{
+        const raw = Number(rng.value);
+        const val = preferRight ? 1/raw : raw;
+        const B = setPairwise(A, i, j, val);
+        onUpdate(B);
+      };
+
+      // Durante drag: aggiorna solo la UI, senza re-render della pagina
+      rng.addEventListener("input", ()=>{
+        valBox.textContent = String(rng.value);
+      });
+
+      // A rilascio: aggiorna matrice e re-render
+      rng.addEventListener("change", ()=>{
+        valBox.textContent = String(rng.value);
+        commit();
+      });
+
+      pickLeft.addEventListener("click", ()=>{
+        preferRight = false;
+        syncButtons();
+        commit();
+      });
+
+      pickRight.addEventListener("click", ()=>{
+        preferRight = true;
+        syncButtons();
+        commit();
+      });
+
+      syncButtons();
+    });
+  }, 0);
+
+  return html;
+}
+
   }
 
   setTimeout(()=>{
