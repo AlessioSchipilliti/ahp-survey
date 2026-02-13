@@ -308,29 +308,40 @@ function pairwiseHTML(labels, A){
 
   for(let i=0;i<n;i++){
     for(let j=i+1;j<n;j++){
+
       const aij = A[i][j];
-      let v = aij;
-      if(v < 1) v = 1 / v;
-      v = Math.min(9, Math.max(1, Math.round(v)));
+
+      let v;
+      if(aij >= 1){
+        v = Math.round(aij);
+        v = Math.max(1, Math.min(9, v));
+      }else{
+        v = -Math.round(1 / aij);
+        v = Math.max(-9, Math.min(-2, v));
+      }
+
+      const direction =
+        v > 0 ? "Left preferred"
+        : "Right preferred";
 
       html += `
         <div class="pairRow" data-i="${i}" data-j="${j}">
           <div>${escapeHtml(labels[i])}</div>
           <div class="pairMid">
-            <div class="sidePick">
-              <button type="button" class="pickLeft">Left</button>
-              <button type="button" class="pickRight">Right</button>
-            </div>
-            <input type="range" class="rng" min="1" max="9" step="1" value="${v}" />
-            <div class="valBox" style="width:22px; text-align:right">${v}</div>
+            <input type="range" class="rng" min="-9" max="9" step="1" value="${v}" />
+            <div class="valBox">${v}</div>
+            <div class="dirBox">${direction}</div>
           </div>
           <div style="text-align:right">${escapeHtml(labels[j])}</div>
         </div>
       `;
     }
   }
+
   return html;
 }
+
+
 
 function bindPairwise(rootEl, A, onUpdate){
   rootEl.querySelectorAll(".pairRow").forEach(row=>{
@@ -339,32 +350,64 @@ function bindPairwise(rootEl, A, onUpdate){
 
     const rng = row.querySelector(".rng");
     const valBox = row.querySelector(".valBox");
-    const pickLeft = row.querySelector(".pickLeft");
-    const pickRight = row.querySelector(".pickRight");
+    const dirBox = row.querySelector(".dirBox");
 
-    let preferRight = A[i][j] < 1;
+    const normalize = (raw)=>{
+      let v = Number(raw);
 
-    const syncButtons = ()=>{
-      pickLeft.classList.toggle("active", !preferRight);
-      pickRight.classList.toggle("active", preferRight);
+      // remove invalid values
+      if(v === 0) v = 1;
+      if(v === -1) v = -2;
+
+      if(v < 0){
+        v = Math.max(-9, Math.min(-2, v));
+      }else{
+        v = Math.max(1, Math.min(9, v));
+      }
+
+      return v;
     };
 
-    const commit = ()=>{
-      const raw = Number(rng.value);
-      valBox.textContent = String(raw);
-      const val = preferRight ? 1/raw : raw;
-      onUpdate(setPairwise(A, i, j, val));
+    const apply = ()=>{
+      const v = normalize(rng.value);
+      rng.value = String(v);
+
+      valBox.textContent = v;
+      dirBox.textContent =
+        v > 0 ? "Left preferred"
+              : "Right preferred";
+
+      const B = cloneMatrix(A);
+
+      if(v > 0){
+        B[i][j] = v;
+        B[j][i] = 1 / v;
+      }else{
+        const s = Math.abs(v);
+        B[i][j] = 1 / s;
+        B[j][i] = s;
+      }
+
+      for(let k=0;k<B.length;k++) B[k][k] = 1;
+
+      onUpdate(B);
     };
 
-    rng.addEventListener("input", ()=>{ valBox.textContent = String(rng.value); });
-    rng.addEventListener("change", commit);
+    rng.addEventListener("input", ()=>{
+      const v = normalize(rng.value);
+      rng.value = String(v);
 
-    pickLeft.addEventListener("click", ()=>{ preferRight = false; syncButtons(); commit(); });
-    pickRight.addEventListener("click", ()=>{ preferRight = true; syncButtons(); commit(); });
+      valBox.textContent = v;
+      dirBox.textContent =
+        v > 0 ? "Left preferred"
+              : "Right preferred";
+    });
 
-    syncButtons();
+    rng.addEventListener("change", apply);
   });
 }
+
+
 
 function renderEditableList(containerId, items, onChange, minLen){
   const root = document.getElementById(containerId);
