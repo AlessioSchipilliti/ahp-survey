@@ -1,10 +1,8 @@
 // app.js
 const STORAGE_KEY = "ahp_state_pages_v1";
 
-// Random Index (Saaty)
 const RI = { 1:0, 2:0, 3:0.58, 4:0.90, 5:1.12, 6:1.24, 7:1.32, 8:1.41, 9:1.45, 10:1.49 };
 
-// -------------------- State --------------------
 function defaultState(){
   const st = {
     problem: { name: "Logistics", goal: "Select the best warehouse location" },
@@ -19,12 +17,14 @@ function defaultState(){
 }
 
 function identityMatrix(n){
-  return Array.from({length:n}, (_,i)=>Array.from({length:n}, (_,j)=> (i===j ? 1 : 1)));
+  return Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) => (i === j ? 1 : 1))
+  );
 }
 
 function initMatrices(st){
   st.criteriaMatrix = identityMatrix(st.criteria.length);
-  st.altMatrices = st.criteria.map(()=> identityMatrix(st.alternatives.length));
+  st.altMatrices = st.criteria.map(() => identityMatrix(st.alternatives.length));
 }
 
 function loadState(){
@@ -33,17 +33,20 @@ function loadState(){
 
   try{
     const st = JSON.parse(raw);
+
     if(!st.problem || !Array.isArray(st.criteria) || !Array.isArray(st.alternatives)) return defaultState();
 
     if(!Array.isArray(st.criteriaMatrix) || !Array.isArray(st.altMatrices)) initMatrices(st);
 
     if(typeof st.activeCritIdx !== "number") st.activeCritIdx = 0;
-    if(st.activeCritIdx < 0) st.activeCritIdx = 0;
-    if(st.activeCritIdx >= st.criteria.length) st.activeCritIdx = 0;
+    if(st.activeCritIdx < 0 || st.activeCritIdx >= st.criteria.length) st.activeCritIdx = 0;
 
-    if(st.criteriaMatrix.length !== st.criteria.length) initMatrices(st);
-    if(st.altMatrices.length !== st.criteria.length) initMatrices(st);
-    if(st.altMatrices.some(m => !Array.isArray(m) || m.length !== st.alternatives.length)) initMatrices(st);
+    const nC = st.criteria.length;
+    const nA = st.alternatives.length;
+
+    if(st.criteriaMatrix.length !== nC) initMatrices(st);
+    if(st.altMatrices.length !== nC) initMatrices(st);
+    if(st.altMatrices.some(m => !Array.isArray(m) || m.length !== nA)) initMatrices(st);
 
     return st;
   }catch{
@@ -55,8 +58,21 @@ function saveState(st){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
 }
 
-// -------------------- AHP math --------------------
-function cloneMatrix(A){ return A.map(r=>r.slice()); }
+function escapeHtml(s){
+  return String(s)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;");
+}
+
+function setStatus(st){
+  const el = document.getElementById("status");
+  if(!el) return;
+  el.textContent = `Criteria: ${st.criteria.length}, Alternatives: ${st.alternatives.length}`;
+}
+
+function cloneMatrix(A){ return A.map(r => r.slice()); }
 
 function setPairwise(A, i, j, v){
   const B = cloneMatrix(A);
@@ -77,14 +93,12 @@ function powerIterationWeights(A, maxIter=1500, tol=1e-11){
       for(let j=0;j<n;j++) s += A[i][j] * w[j];
       Aw[i] = s;
     }
-
     const sum = Aw.reduce((a,b)=>a+b,0);
-    const wNew = Aw.map(x=>x/sum);
+    const wNew = Aw.map(x => x/sum);
 
     let diff = 0;
     for(let i=0;i<n;i++) diff = Math.max(diff, Math.abs(wNew[i]-w[i]));
     w = wNew;
-
     if(diff < tol) break;
   }
 
@@ -94,8 +108,8 @@ function powerIterationWeights(A, maxIter=1500, tol=1e-11){
     for(let j=0;j<n;j++) s += A[i][j] * w[j];
     Aw2[i] = s;
   }
-
   const lambdaMax = Aw2.reduce((a,v,i)=> a + (v / w[i]), 0) / n;
+
   return { weights: w, lambdaMax };
 }
 
@@ -113,38 +127,19 @@ function ahpSolve(A){
   return { weights, lambdaMax, ci, cr };
 }
 
-// -------------------- UI helpers --------------------
-function escapeHtml(s){
-  return String(s)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;");
-}
-
-function setStatus(st){
-  const el = document.getElementById("status");
-  if(!el) return;
-  el.textContent = `Criteria: ${st.criteria.length}, Alternatives: ${st.alternatives.length}`;
-}
-
 function crMessage(cr){
-  if(cr <= 0.10){
-    return { level: "good", title: "Consistenza buona", text: `CR ${cr.toFixed(3)}. I confronti sono coerenti.` };
-  }
-  if(cr <= 0.20){
-    return { level: "mid", title: "Consistenza borderline", text: `CR ${cr.toFixed(3)}. Rivedi 1 o 2 confronti.` };
-  }
-  return { level: "warn", title: "Consistenza bassa", text: `CR ${cr.toFixed(3)}. Il ranking può cambiare. Rivedi i confronti.` };
+  if(cr <= 0.10) return { level: "good", title: "Consistenza buona", text: `CR ${cr.toFixed(3)}.` };
+  if(cr <= 0.20) return { level: "mid", title: "Consistenza borderline", text: `CR ${cr.toFixed(3)}.` };
+  return { level: "warn", title: "Consistenza bassa", text: `CR ${cr.toFixed(3)}.` };
 }
 
 function crBadge(cr){
   const m = crMessage(cr);
   const cls = m.level === "good" ? "badge good" : (m.level === "mid" ? "badge mid" : "badge warn");
-  return `<span class="${cls}">${escapeHtml(m.title)}. ${escapeHtml(m.text)}</span>`;
+  return `<span class="${cls}">${escapeHtml(m.title)} ${escapeHtml(m.text)}</span>`;
 }
 
-// -------------------- Heatmap --------------------
+// heatmap
 function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 function lerp(a,b,t){ return a + (b - a) * t; }
 
@@ -158,7 +153,7 @@ function mixColor(c1, c2, t){
 
 function rgb(arr){ return `rgb(${arr[0]},${arr[1]},${arr[2]})`; }
 
-function matrixHeatmap(containerId, title){
+function matrixHeatmap(canvasId, title){
   return `
     <div class="heatWrap">
       <div class="heatTitle">
@@ -169,7 +164,7 @@ function matrixHeatmap(containerId, title){
           <span>high</span>
         </div>
       </div>
-      <canvas class="heatCanvas" id="${containerId}" width="900" height="560"></canvas>
+      <canvas class="heatCanvas" id="${canvasId}" width="900" height="560"></canvas>
     </div>
   `;
 }
@@ -248,13 +243,12 @@ function drawMatrixHeatmap(canvasId, labels, A){
 
       ctx.fillStyle = "rgba(15,23,42,0.86)";
       ctx.font = "11px system-ui";
-      const txt = Number.isFinite(v) ? v.toFixed(2) : "";
-      ctx.fillText(txt, x + cell/2, y + cell/2);
+      ctx.fillText(Number.isFinite(v) ? v.toFixed(2) : "", x + cell/2, y + cell/2);
     }
   }
 }
 
-// -------------------- Charts --------------------
+// charts
 function drawBarChart(canvasId, title, items){
   const c = document.getElementById(canvasId);
   if(!c) return;
@@ -268,7 +262,8 @@ function drawBarChart(canvasId, title, items){
   ctx.font = "18px system-ui";
   ctx.fillText(title, 18, 28);
 
-  const maxV = Math.max(...items.map(x=>x.value), 0.00001);
+  const maxV = Math.max(...items.map(x => x.value), 0.00001);
+
   const left = 18;
   const right = 18;
   const top = 44;
@@ -306,7 +301,7 @@ function drawBarChart(canvasId, title, items){
   });
 }
 
-// -------------------- Pairwise --------------------
+// pairwise, scoped binding per container
 function pairwiseHTML(labels, A){
   const n = labels.length;
   let html = "";
@@ -314,7 +309,6 @@ function pairwiseHTML(labels, A){
   for(let i=0;i<n;i++){
     for(let j=i+1;j<n;j++){
       const aij = A[i][j];
-
       let v = aij;
       if(v < 1) v = 1 / v;
       v = Math.min(9, Math.max(1, Math.round(v)));
@@ -335,13 +329,10 @@ function pairwiseHTML(labels, A){
       `;
     }
   }
-
   return html;
 }
 
 function bindPairwise(rootEl, A, onUpdate){
-  if(!rootEl) return;
-
   rootEl.querySelectorAll(".pairRow").forEach(row=>{
     const i = Number(row.dataset.i);
     const j = Number(row.dataset.j);
@@ -350,8 +341,6 @@ function bindPairwise(rootEl, A, onUpdate){
     const valBox = row.querySelector(".valBox");
     const pickLeft = row.querySelector(".pickLeft");
     const pickRight = row.querySelector(".pickRight");
-
-    if(!rng || !valBox || !pickLeft || !pickRight) return;
 
     let preferRight = A[i][j] < 1;
 
@@ -364,33 +353,55 @@ function bindPairwise(rootEl, A, onUpdate){
       const raw = Number(rng.value);
       valBox.textContent = String(raw);
       const val = preferRight ? 1/raw : raw;
-      const B = setPairwise(A, i, j, val);
-      onUpdate(B);
+      onUpdate(setPairwise(A, i, j, val));
     };
 
-    rng.addEventListener("input", ()=>{
-      valBox.textContent = String(rng.value);
-    });
-
+    rng.addEventListener("input", ()=>{ valBox.textContent = String(rng.value); });
     rng.addEventListener("change", commit);
 
-    pickLeft.addEventListener("click", ()=>{
-      preferRight = false;
-      syncButtons();
-      commit();
-    });
-
-    pickRight.addEventListener("click", ()=>{
-      preferRight = true;
-      syncButtons();
-      commit();
-    });
+    pickLeft.addEventListener("click", ()=>{ preferRight = false; syncButtons(); commit(); });
+    pickRight.addEventListener("click", ()=>{ preferRight = true; syncButtons(); commit(); });
 
     syncButtons();
   });
 }
 
-// -------------------- Pages --------------------
+function renderEditableList(containerId, items, onChange, minLen){
+  const root = document.getElementById(containerId);
+  if(!root) return;
+
+  root.innerHTML = "";
+  items.forEach((v, i)=>{
+    const row = document.createElement("div");
+    row.className = "kv";
+    row.style.marginBottom = "8px";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = v;
+    input.addEventListener("input", (e)=>{
+      const next = items.slice();
+      next[i] = e.target.value;
+      onChange(next);
+    });
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn";
+    btn.textContent = "-";
+    btn.disabled = items.length <= minLen;
+    btn.addEventListener("click", ()=>{
+      if(items.length <= minLen) return;
+      onChange(items.filter((_,k)=>k!==i));
+    });
+
+    row.appendChild(input);
+    row.appendChild(btn);
+    root.appendChild(row);
+  });
+}
+
+// pages
 function renderSetupPage(st){
   const view = document.getElementById("view");
   if(!view) return;
@@ -431,18 +442,8 @@ function renderSetupPage(st){
     </div>
   `;
 
-  const pName = document.getElementById("p_name");
-  const pGoal = document.getElementById("p_goal");
-
-  pName.addEventListener("input", e=>{
-    st.problem.name = e.target.value;
-    saveState(st);
-  });
-
-  pGoal.addEventListener("input", e=>{
-    st.problem.goal = e.target.value;
-    saveState(st);
-  });
+  document.getElementById("p_name").addEventListener("input", e=>{ st.problem.name = e.target.value; saveState(st); });
+  document.getElementById("p_goal").addEventListener("input", e=>{ st.problem.goal = e.target.value; saveState(st); });
 
   renderEditableList("crit_list", st.criteria, (arr)=>{
     st.criteria = arr;
@@ -596,27 +597,7 @@ function computeResults(st){
     .map((name,i)=>({ name, score: scores[i] }))
     .sort((a,b)=>b.score-a.score);
 
-  return {
-    problem: st.problem,
-    criteria: st.criteria,
-    alternatives: st.alternatives,
-    criteriaMatrix: st.criteriaMatrix,
-    altMatrices: st.altMatrices,
-    results: {
-      criteriaWeights: crit.weights,
-      criteriaCR: crit.cr,
-      finalScores: scores,
-      ranking,
-      altWeightsByCriterion: st.criteria.reduce((acc, c, i)=>{
-        acc[c] = altSolves[i].weights;
-        return acc;
-      }, {}),
-      altCRByCriterion: st.criteria.reduce((acc, c, i)=>{
-        acc[c] = altSolves[i].cr;
-        return acc;
-      }, {})
-    }
-  };
+  return { critWeights: crit.weights, critCR: crit.cr, scores, ranking };
 }
 
 function weightsTable(labels, weights){
@@ -639,41 +620,24 @@ function rankingTable(items){
   return html;
 }
 
-function altWeightsTables(res){
-  let html = `<div class="row">`;
-  res.criteria.forEach((c)=>{
-    const w = res.results.altWeightsByCriterion[c];
-    const cr = res.results.altCRByCriterion[c];
-    html += `
-      <div>
-        <div class="small muted">${escapeHtml(c)} ${crBadge(cr)}</div>
-        <div style="height:8px"></div>
-        ${weightsTable(res.alternatives, w)}
-      </div>
-    `;
-  });
-  html += `</div>`;
-  return html;
-}
-
 function renderResultsPage(st){
   const view = document.getElementById("view");
   if(!view) return;
 
   const res = computeResults(st);
-  const best = res.results.ranking[0];
+  const best = res.ranking[0];
 
   view.innerHTML = `
     <div class="row">
       <div>
         <div class="panelTitle">Key results</div>
         <div style="font-size:18px; font-weight:700; margin-top:6px">${escapeHtml(best.name)}</div>
-        <div class="small muted">Top ranked alternative. Score ${best.score.toFixed(4)}</div>
+        <div class="small muted">Score ${best.score.toFixed(4)}</div>
         <div style="height:10px"></div>
-        ${crBadge(res.results.criteriaCR)}
+        ${crBadge(res.critCR)}
         <div class="divider"></div>
         <div class="panelTitle">Ranking</div>
-        ${rankingTable(res.results.ranking)}
+        ${rankingTable(res.ranking)}
       </div>
 
       <div>
@@ -687,16 +651,11 @@ function renderResultsPage(st){
     <div class="divider"></div>
 
     <div class="panelTitle">Criteria weights</div>
-    ${weightsTable(res.criteria, res.results.criteriaWeights)}
-
-    <div class="divider"></div>
-
-    <div class="panelTitle">Alternative weights by criterion</div>
-    ${altWeightsTables(res)}
+    ${weightsTable(st.criteria, res.critWeights)}
   `;
 
-  const critRows = res.criteria.map((c, i)=>({ name: c, value: res.results.criteriaWeights[i] }));
-  const scoreRows = res.alternatives.map((a, i)=>({ name: a, value: res.results.finalScores[i] }));
+  const critRows = st.criteria.map((c, i)=>({ name: c, value: res.critWeights[i] }));
+  const scoreRows = st.alternatives.map((a, i)=>({ name: a, value: res.scores[i] }));
 
   setTimeout(()=>{
     drawBarChart("chartCrit", "Criteria weights", critRows);
@@ -704,7 +663,7 @@ function renderResultsPage(st){
   }, 0);
 }
 
-// -------------------- Buttons --------------------
+// nav buttons
 function wireNavButtons(st){
   const prevBtn = document.getElementById("prevBtn");
   const nextBtn = document.getElementById("nextBtn");
@@ -741,12 +700,18 @@ function wireCommonButtons(st){
   const exp = document.getElementById("btnExport");
   if(exp){
     exp.addEventListener("click", ()=>{
-      const payload = computeResults(st);
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const out = {
+        problem: st.problem,
+        criteria: st.criteria,
+        alternatives: st.alternatives,
+        criteriaMatrix: st.criteriaMatrix,
+        altMatrices: st.altMatrices
+      };
+      const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "ahp_results.json";
+      a.download = "ahp_state.json";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -755,55 +720,13 @@ function wireCommonButtons(st){
   }
 }
 
-function renderEditableList(containerId, items, onChange, minLen){
-  const root = document.getElementById(containerId);
-  if(!root) return;
-
-  root.innerHTML = "";
-  items.forEach((v, i)=>{
-    const row = document.createElement("div");
-    row.className = "kv";
-    row.style.marginBottom = "8px";
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = v;
-    input.addEventListener("input", (e)=>{
-      const next = items.slice();
-      next[i] = e.target.value;
-      onChange(next);
-    });
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn";
-    btn.textContent = "-";
-    btn.disabled = items.length <= minLen;
-    btn.addEventListener("click", ()=>{
-      if(items.length <= minLen) return;
-      const next = items.filter((_,k)=>k!==i);
-      onChange(next);
-    });
-
-    row.appendChild(input);
-    row.appendChild(btn);
-    root.appendChild(row);
-  });
-}
-
-// -------------------- Main --------------------
 function main(){
   const st = loadState();
-
   wireNavButtons(st);
   wireCommonButtons(st);
-
   setStatus(st);
 
   const page = document.body.dataset.page;
-  const view = document.getElementById("view");
-  if(!view) return;
-
   if(page === "setup") renderSetupPage(st);
   if(page === "matrices") renderMatricesPage(st);
   if(page === "results") renderResultsPage(st);
@@ -811,20 +734,9 @@ function main(){
   saveState(st);
 }
 
-function boot(){
-  try{
-    main();
-  }catch(e){
-    console.error(e);
-  }
-}
-
 if(document.readyState === "loading"){
-  document.addEventListener("DOMContentLoaded", boot);
+  document.addEventListener("DOMContentLoaded", main);
 }else{
-  boot();
+  main();
 }
-
-// utile su back/forward cache
-window.addEventListener("pageshow", boot);
-
+window.addEventListener("pageshow", main);
