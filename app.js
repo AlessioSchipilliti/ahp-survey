@@ -363,7 +363,7 @@ function drawBarChart(canvasId, title, items){
 }
 
 // -------------------- Controls: pairwise UI --------------------
-function pairwiseUI(labels, A, onUpdate){
+function pairwiseUI(labels, A){
   const n = labels.length;
   let html = "";
 
@@ -392,60 +392,61 @@ function pairwiseUI(labels, A, onUpdate){
     }
   }
 
-  // attach events after DOM is painted
-  setTimeout(()=>{
-    document.querySelectorAll(".pairRow").forEach(row=>{
-      const i = Number(row.dataset.i);
-      const j = Number(row.dataset.j);
-
-      const rng = row.querySelector(".rng");
-      const valBox = row.querySelector(".valBox");
-      const pickLeft = row.querySelector(".pickLeft");
-      const pickRight = row.querySelector(".pickRight");
-
-      let preferRight = A[i][j] < 1;
-
-      const syncButtons = ()=>{
-        pickLeft.classList.toggle("active", !preferRight);
-        pickRight.classList.toggle("active", preferRight);
-      };
-
-      const commit = ()=>{
-        const raw = Number(rng.value);
-        const val = preferRight ? 1/raw : raw;
-        const B = setPairwise(A, i, j, val);
-        onUpdate(B);
-      };
-
-      // smooth dragging without re-render
-      rng.addEventListener("input", ()=>{
-        valBox.textContent = String(rng.value);
-      });
-
-      // commit on release
-      rng.addEventListener("change", ()=>{
-        valBox.textContent = String(rng.value);
-        commit();
-      });
-
-      pickLeft.addEventListener("click", ()=>{
-        preferRight = false;
-        syncButtons();
-        commit();
-      });
-
-      pickRight.addEventListener("click", ()=>{
-        preferRight = true;
-        syncButtons();
-        commit();
-      });
-
-      syncButtons();
-    });
-  }, 0);
-
   return html;
 }
+
+function bindPairwiseHandlers(rootEl, labels, A, onUpdate){
+  if(!rootEl) return;
+
+  rootEl.querySelectorAll(".pairRow").forEach(row=>{
+    const i = Number(row.dataset.i);
+    const j = Number(row.dataset.j);
+
+    const rng = row.querySelector(".rng");
+    const valBox = row.querySelector(".valBox");
+    const pickLeft = row.querySelector(".pickLeft");
+    const pickRight = row.querySelector(".pickRight");
+
+    if(!rng || !valBox || !pickLeft || !pickRight) return;
+
+    let preferRight = A[i][j] < 1;
+
+    const syncButtons = ()=>{
+      pickLeft.classList.toggle("active", !preferRight);
+      pickRight.classList.toggle("active", preferRight);
+    };
+
+    const commit = ()=>{
+      const raw = Number(rng.value);
+      valBox.textContent = String(raw);
+
+      const val = preferRight ? 1/raw : raw;
+      const B = setPairwise(A, i, j, val);
+      onUpdate(B);
+    };
+
+    rng.addEventListener("input", ()=>{
+      valBox.textContent = String(rng.value);
+    });
+
+    rng.addEventListener("change", commit);
+
+    pickLeft.addEventListener("click", ()=>{
+      preferRight = false;
+      syncButtons();
+      commit();
+    });
+
+    pickRight.addEventListener("click", ()=>{
+      preferRight = true;
+      syncButtons();
+      commit();
+    });
+
+    syncButtons();
+  });
+}
+
 
 // -------------------- Page rendering --------------------
 function renderEditableList(containerId, items, onChange, minLen){
@@ -623,12 +624,16 @@ function renderMatricesPage(st){
   `;
 
   // pairwise blocks
-  document.getElementById("critPairs").innerHTML = pairwiseUI(st.criteria, st.criteriaMatrix, (B)=>{
-    st.criteriaMatrix = B;
-    saveState(st);
-    renderMatricesPage(st);
-    setStatus(st);
-  });
+const critPairsEl = document.getElementById("critPairs");
+critPairsEl.innerHTML = pairwiseUI(st.criteria, st.criteriaMatrix);
+
+bindPairwiseHandlers(critPairsEl, st.criteria, st.criteriaMatrix, (B)=>{
+  st.criteriaMatrix = B;
+  saveState(st);
+  renderMatricesPage(st);
+  setStatus(st);
+});
+
 
   document.getElementById("altPairs").innerHTML = pairwiseUI(st.alternatives, A, (B)=>{
     st.altMatrices[activeIdx] = B;
