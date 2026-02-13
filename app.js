@@ -320,9 +320,16 @@ function pairwiseHTML(labels, A){
         v = Math.max(-9, Math.min(-2, v));
       }
 
-      const direction =
-        v > 0 ? "Left preferred"
-        : "Right preferred";
+      let direction;
+if(v === 1){
+  direction = "Equivalent";
+}else if(v > 1){
+  direction = "Left preferred";
+}else{
+  direction = "Right preferred";
+}
+});
+
 
       html += `
         <div class="pairRow" data-i="${i}" data-j="${j}">
@@ -397,10 +404,14 @@ function bindPairwise(rootEl, A, onUpdate){
       const v = normalize(rng.value);
       rng.value = String(v);
 
-      valBox.textContent = v;
-      dirBox.textContent =
-        v > 0 ? "Left preferred"
-              : "Right preferred";
+      if(v === 1){
+  dirBox.textContent = "Equivalent";
+}else if(v > 1){
+  dirBox.textContent = "Left preferred";
+}else{
+  dirBox.textContent = "Right preferred";
+}
+
     });
 
     rng.addEventListener("change", apply);
